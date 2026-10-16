@@ -1,5 +1,8 @@
-export function configuredNotifiers(env) {
+export function configuredNotifiers(env, { push } = {}) {
   const notifiers = [];
+  if (push?.size) {
+    notifiers.push({ name: 'push', send: (msg) => push.send(msg) });
+  }
   if (env.RESEND_API_KEY && env.EMAIL_TO) {
     notifiers.push({ name: 'email', send: (msg) => sendEmail(env, msg) });
   }

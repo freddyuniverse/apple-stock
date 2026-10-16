@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Apple Stock</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon.png">
+<link rel="icon" href="/icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Stock">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <style>
   :root { color-scheme: light dark; --fg: #1d1d1f; --dim: #6e6e73; --bg: #fff; --panel: #f5f5f7; --line: #d2d2d7; --blue: #0071e3; --hit: #008009; --menu: #fff; }
   @media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --dim: #a1a1a6; --bg: #000; --panel: #161617; --line: #424245; --blue: #2997ff; --hit: #30d158; --menu: #1d1d1f; } }
@@ -45,6 +53,12 @@
   #postal { text-transform: uppercase; }
   #postal::placeholder { text-transform: none; }
   select.field { appearance: none; padding-right: 40px; cursor: pointer; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2386868b' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 16px center; }
+  .alerts { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; height: 56px; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line); background: none; border: 0; width: 100%; text-align: left; }
+  .alerts.on { box-shadow: inset 0 0 0 1px var(--line); }
+  .alerts .state { color: var(--dim); font-size: 14px; }
+  .alerts.on .state { color: var(--hit); }
+  .alerts:disabled { cursor: default; color: var(--dim); }
+  .link { background: none; border: 0; padding: 0; color: var(--blue); font-size: 14px; }
   .go { height: 52px; border: 0; border-radius: 12px; background: var(--blue); color: #fff; font-size: 17px; }
   .go:hover { filter: brightness(1.08); }
   .go:disabled { opacity: .5; cursor: default; }
@@ -95,6 +109,11 @@
             <option value="5">5 km</option><option value="10">10 km</option><option value="25">25 km</option>
             <option value="50">50 km</option><option value="100">100 km</option><option value="500">500 km</option>
           </select>
+        </div>
+        <div class="alerts" id="alerts" hidden>
+          <button class="link" type="button" id="pushOn">Turn on notifications</button>
+          <span class="state" id="pushState"></span>
+          <span id="pushActions" hidden><button class="link" type="button" id="pushTest">Test</button> &nbsp; <button class="link" type="button" id="pushOff">Turn off</button></span>
         </div>
         <input class="field" id="email" type="email" placeholder="Email me when it’s in stock" autocomplete="email">
         <button class="go" type="button" id="check">Check now</button>
@@ -241,7 +260,66 @@ $('distance').onchange = () => save({ maxDistanceKm: Number($('distance').value)
 for (const id of ['postal', 'email']) $(id).onkeydown = (e) => e.key === 'Enter' && $(id).blur();
 $('check').onclick = () => api('/api/check', {});
 
-api('/api/state');
+const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const post = (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+const keyBytes = (b64) => Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (b64.length % 4)) % 4)), (c) => c.charCodeAt(0));
+
+async function currentSubscription() {
+  const reg = await navigator.serviceWorker.getRegistration('/');
+  return reg?.pushManager.getSubscription();
+}
+
+function showPush(mode, note = '') {
+  $('alerts').hidden = false;
+  $('pushOn').hidden = mode !== 'off';
+  $('pushActions').hidden = mode !== 'on';
+  $('alerts').classList.toggle('on', mode === 'on');
+  $('pushState').textContent = note || (mode === 'on' ? '● Notifications on' : '');
+  $('alerts').prepend(mode === 'on' ? $('pushState') : $('pushOn'));
+}
+
+async function initPush() {
+  if (!state?.pushEnabled) return;
+  if (!pushSupported) {
+    if (ios && !standalone) showPush('none', 'Share → Add to Home Screen to get alerts');
+    return;
+  }
+  const sub = await currentSubscription();
+  if (sub && Notification.permission === 'granted') {
+    await post('/api/push/subscribe', sub);
+    showPush('on');
+  } else showPush('off', Notification.permission === 'denied' ? 'Blocked in settings' : '');
+}
+
+$('pushOn').onclick = async () => {
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    if ((await Notification.requestPermission()) !== 'granted') return showPush('off', 'Blocked in settings');
+    const { publicKey } = await (await fetch('/api/push/key')).json();
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) });
+    await post('/api/push/subscribe', sub);
+    showPush('on');
+    await post('/api/push/test');
+  } catch (err) {
+    showPush('off', err.message);
+  }
+};
+$('pushTest').onclick = async () => {
+  const res = await post('/api/push/test');
+  if (!res.ok) $('pushState').textContent = (await res.json()).error;
+};
+$('pushOff').onclick = async () => {
+  const sub = await currentSubscription();
+  if (sub) {
+    await post('/api/push/unsubscribe', { endpoint: sub.endpoint });
+    await sub.unsubscribe();
+  }
+  showPush('off');
+};
+
+api('/api/state').then(initPush);
 setInterval(() => api('/api/state'), 3000);
 setInterval(() => state && !state.checking && state.lastChecked && ($('status').textContent = state.error || `Checked ${ago(state.lastChecked)}`), 1000);
 </script>

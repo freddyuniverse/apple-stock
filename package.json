@@ -14,6 +14,7 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "playwright": "1.62.1"
+    "playwright": "1.62.1",
+    "web-push": "3.6.7"
   }
 }

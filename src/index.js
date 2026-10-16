@@ -1,5 +1,6 @@
 import { Checker } from './checker.js';
 import { configuredNotifiers, notifyAll } from './notify.js';
+import { PushStore } from './push.js';
 import { startServer } from './server.js';
 
 const args = new Set(process.argv.slice(2));
@@ -7,9 +8,18 @@ const env = process.env;
 const log = (...m) => console.log(new Date().toISOString(), ...m);
 
 async function main() {
+  const push = await new PushStore({
+    env,
+    keysFile: env.VAPID_FILE || '.vapid.json',
+    subscriptionsFile: env.SUBSCRIPTIONS_FILE || 'subscriptions.json',
+    log,
+  }).init();
+
   if (args.has('--test-notify')) {
-    const notifiers = configuredNotifiers(env);
-    if (notifiers.length === 0) throw new Error('No notifier configured; set RESEND_API_KEY+EMAIL_TO, NTFY_TOPIC or DISCORD_WEBHOOK_URL');
+    const notifiers = configuredNotifiers(env, { push });
+    if (notifiers.length === 0) {
+      throw new Error('No notifier configured; turn on notifications in the UI or set RESEND_API_KEY+EMAIL_TO, NTFY_TOPIC or DISCORD_WEBHOOK_URL');
+    }
     const ok = await notifyAll(notifiers, { subject: 'apple-stock test notification', text: 'Notifications are working.' }, log);
     process.exit(ok ? 0 : 1);
   }
@@ -23,9 +33,10 @@ async function main() {
     headless: env.HEADLESS !== 'false',
     dryRun: args.has('--dry-run'),
     log,
+    push,
   });
   await checker.init();
-  if (checker.notifiers().length === 0) log('warning: no notifier configured, results are only logged');
+  if (checker.notifiers().length === 0) log('no notifier yet: turn on notifications in the UI or configure one in .env');
 
   if (once) {
     await checker.check();

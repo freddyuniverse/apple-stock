@@ -28,6 +28,10 @@ npm start                     # checks every INTERVAL_SECONDS until stopped
 
 To run a single check: `npm run check`. Add `-- --dry-run` to log results without notifying or saving state.
 
+Then open http://localhost:4321 to pick the model, colours, storage and postal code.
+
+**On your phone:** browsers only allow push notifications on HTTPS pages, so the phone needs an HTTPS link to the computer. The easiest private way is [Tailscale](https://tailscale.com): install it on both devices, run `tailscale serve --bg 4321` on the computer, and open the `https://<computer>.<tailnet>.ts.net` link it prints. Don't expose the UI on the public internet: anyone who can open it can change the settings.
+
 To keep it running after reboots, see [`examples/com.apple-stock.plist`](examples/com.apple-stock.plist) (macOS launchd) or [`examples/apple-stock.service`](examples/apple-stock.service) (Linux systemd).
 
 ## Run it on GitHub Actions
@@ -59,6 +63,7 @@ The workflow is scheduled every 5 minutes, but GitHub often starts scheduled run
 
 Configure any combination of these:
 
+- **Phone/desktop notifications** (built in, free, no account): open the UI and tap **Turn on notifications**. On iPhone (iOS 16.4+), open the page in Safari, tap Share → **Add to Home Screen**, open it from the home screen, then turn notifications on. Alerts are sent with standard Web Push, so they arrive even when the app is closed. Keys are generated into `.vapid.json` on first run (or set `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`), and devices are saved in `subscriptions.json`.
 - **Email** via [Resend](https://resend.com) (free tier: 3,000 emails/month): `RESEND_API_KEY`, `EMAIL_TO` (comma-separated), and optionally `EMAIL_FROM`. Without a verified domain, Resend only delivers to the email on your Resend account, using the default `onboarding@resend.dev` sender.
 - **Push** via [ntfy](https://ntfy.sh): install the app, subscribe to a hard-to-guess topic, and set `NTFY_TOPIC` (plus `NTFY_SERVER` if you self-host).
 - **Discord**: `DISCORD_WEBHOOK_URL` from a channel's Integrations → Webhooks.

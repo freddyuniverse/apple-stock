@@ -43,8 +43,9 @@ function chunk(list, size) {
 }
 
 export class Checker {
-  constructor({ env, settingsFile, stateFile, country, headless, dryRun, log }) {
+  constructor({ env, settingsFile, stateFile, country, headless, dryRun, log, push }) {
     this.env = env;
+    this.push = push;
     this.settingsFile = settingsFile;
     this.stateFile = stateFile;
     this.country = country;
@@ -110,7 +111,7 @@ export class Checker {
   }
 
   notifiers() {
-    return configuredNotifiers({ ...this.env, EMAIL_TO: this.settings.emailTo });
+    return configuredNotifiers({ ...this.env, EMAIL_TO: this.settings.emailTo }, { push: this.push });
   }
 
   snapshot() {
@@ -129,6 +130,7 @@ export class Checker {
       lastChecked: this.lastChecked,
       error: this.error,
       emailEnabled: Boolean(this.env.RESEND_API_KEY),
+      pushEnabled: Boolean(this.push),
     };
   }
 
