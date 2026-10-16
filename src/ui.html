@@ -115,6 +115,11 @@
           <span class="state" id="pushState"></span>
           <span id="pushActions" hidden><button class="link" type="button" id="pushTest">Test</button> &nbsp; <button class="link" type="button" id="pushOff">Turn off</button></span>
         </div>
+        <div class="alerts" id="ntfy">
+          <button class="link" type="button" id="ntfyOn">Get alerts in the ntfy app</button>
+          <span class="state" id="ntfyState" hidden></span>
+          <span id="ntfyActions" hidden><a class="link" id="ntfyOpen" target="_blank" rel="noopener">Subscribe</a> &nbsp; <button class="link" type="button" id="ntfyTest">Test</button> &nbsp; <button class="link" type="button" id="ntfyOff">Turn off</button></span>
+        </div>
         <input class="field" id="email" type="email" placeholder="Email me when it’s in stock" autocomplete="email">
         <button class="go" type="button" id="check">Check now</button>
       </div>
@@ -233,6 +238,14 @@ function renderControls() {
   if (document.activeElement !== $('email')) $('email').value = settings.emailTo;
   $('distance').value = String(settings.maxDistanceKm);
   $('email').hidden = !state.emailEnabled;
+  const topic = settings.ntfyTopic;
+  $('ntfyOn').hidden = Boolean(topic);
+  $('ntfyState').hidden = $('ntfyActions').hidden = !topic;
+  $('ntfy').classList.toggle('on', Boolean(topic));
+  if (topic) {
+    $('ntfyState').textContent = `● ntfy · ${topic}`;
+    $('ntfyOpen').href = `${state.ntfyServer}/${topic}`;
+  }
   renderHero();
 }
 
@@ -256,6 +269,16 @@ document.addEventListener('keydown', (e) => {
 });
 $('postal').onchange = () => save({ postalCode: $('postal').value });
 $('email').onchange = () => save({ emailTo: $('email').value });
+$('ntfyOn').onclick = () => {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  save({ ntfyTopic: `apple-stock-${[...bytes].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 10)}` });
+};
+$('ntfyOff').onclick = () => save({ ntfyTopic: '' });
+$('ntfyState').onclick = () => navigator.clipboard?.writeText(state.settings.ntfyTopic);
+$('ntfyTest').onclick = async () => {
+  const res = await fetch('/api/ntfy/test', { method: 'POST' });
+  if (!res.ok) $('ntfyState').textContent = (await res.json()).error;
+};
 $('distance').onchange = () => save({ maxDistanceKm: Number($('distance').value) });
 for (const id of ['postal', 'email']) $(id).onkeydown = (e) => e.key === 'Enter' && $(id).blur();
 $('check').onclick = () => api('/api/check', {});

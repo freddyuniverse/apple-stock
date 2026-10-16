@@ -33,6 +33,10 @@ export function startServer(checker, { host, port, log, onSettingsChanged }) {
           return json(res, { devices: push.size });
         }
       }
+      if (req.method === 'POST' && url.pathname === '/api/ntfy/test') {
+        await checker.testNotifier('ntfy');
+        return json(res, {});
+      }
       if (req.method === 'GET' && url.pathname === '/api/state') return json(res, checker.snapshot());
       if (req.method === 'POST' && url.pathname === '/api/settings') {
         const changed = await checker.updateSettings(await readJson(req));

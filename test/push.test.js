@@ -50,3 +50,11 @@ test('PushStore.send drops expired subscriptions and fails only if all fail', as
   s.sender = async () => { throw Object.assign(new Error('nope'), { statusCode: 403, body: 'BadJwtToken' }); };
   await assert.rejects(s.send({ subject: 'x' }), /403 BadJwtToken/);
 });
+
+test('normalizeTopic accepts topics and ntfy URLs, rejects junk', async () => {
+  const { normalizeTopic } = await import('../src/checker.js');
+  assert.equal(normalizeTopic(' apple-stock-ab12 '), 'apple-stock-ab12');
+  assert.equal(normalizeTopic('https://ntfy.sh/my_topic'), 'my_topic');
+  assert.equal(normalizeTopic(''), '');
+  assert.throws(() => normalizeTopic('bad topic!'), /letters/);
+});

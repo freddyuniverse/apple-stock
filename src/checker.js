@@ -4,7 +4,7 @@ import { availabilityKeys, parseCatalog, parseFulfillment, parseProducts, select
 import { configuredNotifiers, notifyAll } from './notify.js';
 import { loadState, saveState } from './state.js';
 
-const SETTING_KEYS = ['product', 'model', 'colors', 'capacities', 'postalCode', 'maxDistanceKm', 'emailTo'];
+const SETTING_KEYS = ['product', 'model', 'colors', 'capacities', 'postalCode', 'maxDistanceKm', 'emailTo', 'ntfyTopic'];
 
 export function defaultSettings(env) {
   return {
@@ -15,7 +15,14 @@ export function defaultSettings(env) {
     postalCode: normalizePostalCode(env.POSTAL_CODE),
     maxDistanceKm: Number(env.MAX_DISTANCE_KM || 50),
     emailTo: env.EMAIL_TO || '',
+    ntfyTopic: env.NTFY_TOPIC || '',
   };
+}
+
+export function normalizeTopic(value) {
+  const topic = String(value ?? '').trim().split('/').pop();
+  if (topic && !/^[\w-]{1,64}$/.test(topic)) throw new Error('ntfy topics can only use letters, numbers, - and _');
+  return topic;
 }
 
 export function normalizePostalCode(value) {
@@ -91,6 +98,7 @@ export class Checker {
     next.postalCode = normalizePostalCode(next.postalCode);
     next.maxDistanceKm = Number(next.maxDistanceKm) || this.settings.maxDistanceKm;
     next.emailTo = String(next.emailTo ?? '').trim();
+    next.ntfyTopic = normalizeTopic(next.ntfyTopic);
     next.colors = stringList(next.colors);
     next.capacities = stringList(next.capacities);
     const productChanged = next.product !== this.settings.product;
@@ -111,7 +119,16 @@ export class Checker {
   }
 
   notifiers() {
-    return configuredNotifiers({ ...this.env, EMAIL_TO: this.settings.emailTo }, { push: this.push });
+    return configuredNotifiers(
+      { ...this.env, EMAIL_TO: this.settings.emailTo, NTFY_TOPIC: this.settings.ntfyTopic },
+      { push: this.push },
+    );
+  }
+
+  async testNotifier(name) {
+    const notifier = this.notifiers().find((n) => n.name === name);
+    if (!notifier) throw new Error(`${name} is not set up`);
+    await notifier.send({ subject: 'Notifications are on', text: 'You’ll get an alert here when it’s in stock.' });
   }
 
   snapshot() {
@@ -131,6 +148,7 @@ export class Checker {
       error: this.error,
       emailEnabled: Boolean(this.env.RESEND_API_KEY),
       pushEnabled: Boolean(this.push),
+      ntfyServer: (this.env.NTFY_SERVER || 'https://ntfy.sh').replace(/\/$/, ''),
     };
   }
 
