@@ -56,6 +56,12 @@ export class AppleStore {
     this.html = await this.page.content();
   }
 
+  async fetchPage() {
+    const res = await fetch(this.productUrl, { headers: { 'User-Agent': userAgentFor('130'), 'Accept-Language': 'en-CA' } });
+    if (!res.ok) throw new Error(`${this.productUrl} returned ${res.status}`);
+    return res.text();
+  }
+
   async listProducts() {
     const res = await fetch(`${this.origin}${this.shopPath}/buy-iphone`, { headers: { 'User-Agent': userAgentFor('130') } });
     if (!res.ok) return [];

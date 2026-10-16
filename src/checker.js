@@ -1,15 +1,17 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { AppleStore, productName } from './apple.js';
-import { availabilityKeys, parseFulfillment, parseProducts, selectProducts, shortPickupQuote } from './parse.js';
+import { availabilityKeys, parseCatalog, parseFulfillment, parseProducts, selectProducts, shortPickupQuote } from './parse.js';
 import { configuredNotifiers, notifyAll } from './notify.js';
 import { loadState, saveState } from './state.js';
 
-const SETTING_KEYS = ['product', 'model', 'postalCode', 'maxDistanceKm', 'emailTo'];
+const SETTING_KEYS = ['product', 'model', 'colors', 'capacities', 'postalCode', 'maxDistanceKm', 'emailTo'];
 
 export function defaultSettings(env) {
   return {
     product: env.PRODUCT || 'iphone-duo',
     model: env.MODELS || 'all',
+    colors: [],
+    capacities: [],
     postalCode: normalizePostalCode(env.POSTAL_CODE),
     maxDistanceKm: Number(env.MAX_DISTANCE_KM || 50),
     emailTo: env.EMAIL_TO || '',
@@ -18,6 +20,20 @@ export function defaultSettings(env) {
 
 export function normalizePostalCode(value) {
   return String(value ?? '').replace(/\s+/g, '').toUpperCase();
+}
+
+function stringList(value) {
+  return Array.isArray(value) ? value.filter((v) => typeof v === 'string').slice(0, 20) : [];
+}
+
+export function filterVariants(products, variants, { colors = [], capacities = [] }) {
+  if (!variants) return products;
+  const byPart = new Map(variants.models.map((m) => [m.partNumber, m]));
+  return products.filter((p) => {
+    const v = byPart.get(p.partNumber);
+    if (!v) return true;
+    return (!colors.length || colors.includes(v.color)) && (!capacities.length || capacities.includes(v.capacity));
+  });
 }
 
 function chunk(list, size) {
@@ -38,6 +54,8 @@ export class Checker {
     this.settings = defaultSettings(env);
     this.products = [];
     this.catalog = [];
+    this.variants = null;
+    this.productImages = {};
     this.models = [];
     this.lastChecked = null;
     this.error = null;
@@ -53,7 +71,18 @@ export class Checker {
       }
     }
     this.store = new AppleStore({ country: this.country, product: this.settings.product, headless: this.headless, log: this.log });
-    this.products = await this.store.listProducts().catch(() => []);
+    [this.products] = await Promise.all([this.store.listProducts().catch(() => []), this.loadVariants()]);
+  }
+
+  async loadVariants(html) {
+    html ??= await this.store.fetchPage().catch((err) => {
+      this.log(`catalog: ${err.message}`);
+      return null;
+    });
+    const variants = html ? parseCatalog(html) : null;
+    if (!variants) return;
+    this.variants = variants;
+    Object.assign(this.productImages, variants.productImages);
   }
 
   async updateSettings(input) {
@@ -61,14 +90,22 @@ export class Checker {
     next.postalCode = normalizePostalCode(next.postalCode);
     next.maxDistanceKm = Number(next.maxDistanceKm) || this.settings.maxDistanceKm;
     next.emailTo = String(next.emailTo ?? '').trim();
-    if (next.product !== this.settings.product) {
-      next.model = 'all';
+    next.colors = stringList(next.colors);
+    next.capacities = stringList(next.capacities);
+    const productChanged = next.product !== this.settings.product;
+    if (productChanged) {
+      Object.assign(next, { model: 'all', colors: [], capacities: [] });
       this.catalog = [];
+      this.variants = null;
       this.models = [];
     }
-    const changed = SETTING_KEYS.some((k) => next[k] !== this.settings[k]);
+    const changed = SETTING_KEYS.some((k) => JSON.stringify(next[k]) !== JSON.stringify(this.settings[k]));
     this.settings = next;
     if (this.settingsFile) await writeFile(this.settingsFile, JSON.stringify(this.settings, null, 2) + '\n');
+    if (productChanged && this.store) {
+      this.store.product = next.product;
+      await this.loadVariants();
+    }
     return changed;
   }
 
@@ -85,6 +122,8 @@ export class Checker {
       settings: this.settings,
       products,
       catalog: this.catalog,
+      variants: this.variants,
+      productImages: this.productImages,
       models: this.models,
       checking: Boolean(this.checking),
       lastChecked: this.lastChecked,
@@ -123,8 +162,9 @@ export class Checker {
     const catalog = parseProducts(store.html);
     if (catalog.length === 0) throw new Error(`no models found on ${store.productUrl}`);
     this.catalog = catalog;
-    const selected = selectProducts(catalog, model);
-    if (selected.length === 0) throw new Error(`"${model}" matched no ${productName(product)} model`);
+    await this.loadVariants(store.html);
+    const selected = selectProducts(filterVariants(catalog, this.variants, this.settings), model);
+    if (selected.length === 0) throw new Error(`no ${productName(product)} model matches`);
 
     const results = { pickup: [], delivery: [] };
     for (const batch of chunk(selected.map((p) => p.partNumber), 10)) {
@@ -171,15 +211,15 @@ export function summarize(selected, { pickup, delivery }) {
     const courier = delivery.find((d) => d.partNumber === p.partNumber);
     const parts = [];
     if (stores.length) {
-      parts.push(`pickup ${stores[0].storeName} ${stores[0].distance}${stores.length > 1 ? ` +${stores.length - 1}` : ''}`);
+      parts.push(`Pickup ${stores[0].storeName} ${stores[0].distance}${stores.length > 1 ? ` +${stores.length - 1}` : ''}`);
     }
     if (courier?.courierAvailable) parts.push('2-hr courier');
     const hit = parts.length > 0;
     if (!hit) {
       const quote = shortPickupQuote(pickup.find((s) => s.partNumber === p.partNumber)?.quote);
       if (quote) parts.push(quote);
-      if (courier?.shipText) parts.push(courier.shipText.toLowerCase());
-      if (parts.length === 0) parts.push('unavailable');
+      if (courier?.shipText) parts.push(courier.shipText);
+      if (parts.length === 0) parts.push('Unavailable');
     }
     return { partNumber: p.partNumber, name: p.name, status: parts.join(' · '), hit };
   });

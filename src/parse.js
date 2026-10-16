@@ -26,9 +26,9 @@ function storageGb(name) {
 export function shortPickupQuote(quote) {
   if (!quote) return '';
   const date = quote.match(/\b(\d{1,2}[./]\d{1,2})\b/);
-  if (/check back/i.test(quote) && date) return `pickup ${date[1]}`;
-  if (/unavailable|not available/i.test(quote)) return 'no pickup';
-  return quote.toLowerCase();
+  if (/check back/i.test(quote) && date) return `Pickup ${date[1]}`;
+  if (/unavailable|not available/i.test(quote)) return 'No pickup';
+  return quote;
 }
 
 export function selectProducts(products, filter) {
@@ -91,4 +91,64 @@ export function availabilityKeys({ pickup, delivery }) {
 
 function stripHtml(s) {
   return String(s).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+export function parseCatalog(html) {
+  const data = productSelectionData(html);
+  if (!data?.products) return null;
+  const values = data.displayValues ?? {};
+  const images = data.imageDictionary ?? {};
+  const variants = (dimension, map) =>
+    (values[dimension]?.variantOrder ?? []).map((key) => ({ key, ...map(values[dimension][key] ?? {}, key) }));
+  return {
+    colors: variants('dimensionColor', (v, key) => ({ name: stripHtml(v.value ?? key), swatch: imgSrc(v.image) })),
+    capacities: variants('dimensionCapacity', (v, key) => ({ name: stripHtml(String(v.value ?? key).split('<as-footnote')[0]) })),
+    models: data.products.map((p) => ({
+      partNumber: p.partNumber,
+      color: p.dimensionColor,
+      capacity: p.dimensionCapacity,
+      image: firstSrc(images[p.imageKey]?.sources?.[0]?.srcSet),
+      price: values.prices?.[p.fullPrice]?.amountBeforeTradeIn ?? null,
+    })),
+    productImages: compareImages(html),
+  };
+}
+
+function productSelectionData(html) {
+  const start = html.indexOf('productSelectionData:', html.indexOf('PRODUCT_SELECTION_BOOTSTRAP'));
+  if (start < 0) return null;
+  const open = html.indexOf('{', start);
+  let depth = 0;
+  let inString = false;
+  for (let i = open; i < html.length; i++) {
+    const c = html[i];
+    if (inString) {
+      if (c === '\\') i++;
+      else if (c === '"') inString = false;
+    } else if (c === '"') inString = true;
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) {
+      try {
+        return JSON.parse(html.slice(open, i + 1));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function compareImages(html) {
+  const out = {};
+  const re = /https:\/\/store\.storeimages\.cdn-apple\.com\/[^"\s\\]*?\/is\/iphone-compare-(iphone-[a-z0-9-]+?)-\d{6}\?wid=400&(?:amp;)?hei=512[^"\s\\]*/g;
+  for (const m of html.matchAll(re)) out[m[1]] ??= m[0].replace(/&amp;/g, '&');
+  return out;
+}
+
+function imgSrc(html) {
+  return html?.match(/src="([^"]+)"/)?.[1].replace(/&amp;/g, '&') ?? null;
+}
+
+function firstSrc(srcSet) {
+  return srcSet?.split(',')[0].trim().split(/\s+/)[0] ?? null;
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { availabilityKeys, parseFulfillment, parseProducts, selectProducts, shortPickupQuote } from '../src/parse.js';
+import { availabilityKeys, parseCatalog, parseFulfillment, parseProducts, selectProducts, shortPickupQuote } from '../src/parse.js';
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
 
@@ -88,16 +88,33 @@ test('summarize reports nearest pickup store, courier and fallback text', async 
     ],
   };
   assert.deepEqual(summarize(selected, results).map((m) => [m.status, m.hit]), [
-    ['pickup Eaton Centre 1.23 km +1 · 2-hr courier', true],
-    ['pickup 10.24 · ships 22 jan', false],
+    ['Pickup Eaton Centre 1.23 km +1 · 2-hr courier', true],
+    ['Pickup 10.24 · Ships 22 Jan', false],
   ]);
   const msg = buildMessage([{ ...results.pickup[0], storeNumber: 'R121' }], new Map([['A', selected[0].name]]), 'https://x');
   assert.equal(msg.subject, 'In stock: iPhone Duo 256GB Star White, pickup at Eaton Centre');
 });
 
 test('shortPickupQuote compresses Apple pickup messages', () => {
-  assert.equal(shortPickupQuote('Check back for availability on 10.24'), 'pickup 10.24');
-  assert.equal(shortPickupQuote('Currently unavailable'), 'no pickup');
-  assert.equal(shortPickupQuote('Available Today'), 'available today');
+  assert.equal(shortPickupQuote('Check back for availability on 10.24'), 'Pickup 10.24');
+  assert.equal(shortPickupQuote('Currently unavailable'), 'No pickup');
+  assert.equal(shortPickupQuote('Available Today'), 'Available Today');
   assert.equal(shortPickupQuote(undefined), '');
+});
+
+test('parseCatalog reads colours, capacities, images and prices', async () => {
+  const { filterVariants } = await import('../src/checker.js');
+  const c = parseCatalog(readFileSync(new URL('./fixtures/duo-page.html', import.meta.url), 'utf8'));
+  assert.deepEqual(c.colors.map((x) => [x.key, x.name]), [['starwhite', 'Star White'], ['nightsky', 'Night Sky']]);
+  assert.match(c.colors[0].swatch, /^https:\/\/store\.storeimages\.cdn-apple\.com\/.*iphone-duo-finish-star-white.*&hei=/);
+  assert.deepEqual(c.capacities.map((x) => x.name), ['256GB', '512GB', '1TB', '2TB']);
+  assert.equal(c.models.length, 8);
+  const m = c.models.find((x) => x.partNumber === 'MK244VC/A');
+  assert.deepEqual([m.color, m.capacity, m.price], ['starwhite', '256gb', 2999]);
+  assert.match(m.image, /iphone-duo-finish-select-star-white-202609\?wid=/);
+  assert.match(c.productImages['iphone-17'], /iphone-compare-iphone-17-\d{6}\?wid=400&hei=512/);
+  assert.equal(parseCatalog('<html></html>'), null);
+  const all = c.models.map((x) => ({ partNumber: x.partNumber }));
+  assert.equal(filterVariants(all, c, { colors: [], capacities: [] }).length, 8);
+  assert.deepEqual(filterVariants(all, c, { colors: ['nightsky'], capacities: ['256gb', '1tb'] }).map((x) => x.partNumber).sort(), ['MK254VC/A', 'MK294VC/A']);
 });
