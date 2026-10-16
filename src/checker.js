@@ -1,17 +1,16 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { AppleStore, productName } from './apple.js';
+import { AppleStore, normalizeProduct, productName } from './apple.js';
 import { availabilityKeys, parseCatalog, parseFulfillment, parseProducts, selectProducts, shortPickupQuote } from './parse.js';
 import { configuredNotifiers, notifyAll } from './notify.js';
 import { loadState, saveState } from './state.js';
 
-const SETTING_KEYS = ['product', 'model', 'colors', 'capacities', 'postalCode', 'maxDistanceKm', 'emailTo', 'ntfyTopic'];
+const SETTING_KEYS = ['product', 'model', 'filters', 'postalCode', 'maxDistanceKm', 'emailTo', 'ntfyTopic'];
 
 export function defaultSettings(env) {
   return {
-    product: env.PRODUCT || 'iphone-duo',
+    product: normalizeProduct(env.PRODUCT || 'iphone-duo'),
     model: env.MODELS || 'all',
-    colors: [],
-    capacities: [],
+    filters: {},
     postalCode: normalizePostalCode(env.POSTAL_CODE),
     maxDistanceKm: Number(env.MAX_DISTANCE_KM || 50),
     emailTo: env.EMAIL_TO || '',
@@ -33,13 +32,38 @@ function stringList(value) {
   return Array.isArray(value) ? value.filter((v) => typeof v === 'string').slice(0, 20) : [];
 }
 
-export function filterVariants(products, variants, { colors = [], capacities = [] }) {
+function normalizeFilters(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([k]) => /^dimension\w{1,40}$/.test(k))
+      .slice(0, 12)
+      .map(([k, v]) => [k, stringList(v)])
+      .filter(([, v]) => v.length),
+  );
+}
+
+export function matchesFilters(model, filters = {}) {
+  return Object.entries(filters).every(([dim, wanted]) => !wanted.length || !(dim in model.dims) || wanted.includes(model.dims[dim]));
+}
+
+export function filterVariants(products, variants, filters) {
   if (!variants) return products;
   const byPart = new Map(variants.models.map((m) => [m.partNumber, m]));
   return products.filter((p) => {
     const v = byPart.get(p.partNumber);
-    if (!v) return true;
-    return (!colors.length || colors.includes(v.color)) && (!capacities.length || capacities.includes(v.capacity));
+    return !v || matchesFilters(v, filters);
+  });
+}
+
+// Some pages (AirPods) have no metrics list, so names come from the selector options.
+export function modelsFromVariants(variants) {
+  const names = new Map(variants.dimensions.flatMap((d) => d.options.map((o) => [`${d.key}:${o.key}`, o.name])));
+  return variants.models.map((m) => {
+    const parts = Object.entries(m.dims).map(([k, v]) => names.get(`${k}:${v}`)).filter(Boolean);
+    let name = parts.join(' ');
+    if (variants.title && !name.startsWith(variants.title)) name = `${variants.title} ${name}`.trim();
+    return { partNumber: m.partNumber, name: name || m.partNumber, price: m.price };
   });
 }
 
@@ -73,13 +97,22 @@ export class Checker {
   async init() {
     if (this.settingsFile) {
       try {
-        Object.assign(this.settings, pick(JSON.parse(await readFile(this.settingsFile, 'utf8'))));
+        const saved = pick(JSON.parse(await readFile(this.settingsFile, 'utf8')));
+        Object.assign(this.settings, saved, { product: normalizeProduct(saved.product ?? this.settings.product) });
       } catch (err) {
         if (err.code !== 'ENOENT') this.log(`ignoring ${this.settingsFile}: ${err.message}`);
       }
     }
     this.store = new AppleStore({ country: this.country, product: this.settings.product, headless: this.headless, log: this.log });
-    [this.products] = await Promise.all([this.store.listProducts().catch(() => []), this.loadVariants()]);
+    const [products] = await Promise.all([
+      this.store.listProducts().catch((err) => {
+        this.log(`product list: ${err.message}`);
+        return [];
+      }),
+      this.loadVariants(),
+    ]);
+    for (const p of products) if (p.image) this.productImages[p.slug] ??= p.image;
+    this.products = products.map(({ slug, name }) => ({ slug, name }));
   }
 
   async loadVariants(html) {
@@ -99,11 +132,11 @@ export class Checker {
     next.maxDistanceKm = Number(next.maxDistanceKm) || this.settings.maxDistanceKm;
     next.emailTo = String(next.emailTo ?? '').trim();
     next.ntfyTopic = normalizeTopic(next.ntfyTopic);
-    next.colors = stringList(next.colors);
-    next.capacities = stringList(next.capacities);
+    next.product = normalizeProduct(next.product);
+    next.filters = normalizeFilters(next.filters);
     const productChanged = next.product !== this.settings.product;
     if (productChanged) {
-      Object.assign(next, { model: 'all', colors: [], capacities: [] });
+      Object.assign(next, { model: 'all', filters: {} });
       this.catalog = [];
       this.variants = null;
       this.models = [];
@@ -134,7 +167,7 @@ export class Checker {
   snapshot() {
     const products = this.products.length ? [...this.products] : [];
     if (!products.some((p) => p.slug === this.settings.product)) {
-      products.push({ slug: this.settings.product, name: productName(this.settings.product) });
+      products.push({ slug: this.settings.product, name: this.variants?.title ?? productName(this.settings.product) });
     }
     return {
       settings: this.settings,
@@ -179,11 +212,12 @@ export class Checker {
     if (!store.browser) await store.open();
 
     await store.loadProductPage();
-    const catalog = parseProducts(store.html);
+    await this.loadVariants(store.html);
+    let catalog = parseProducts(store.html);
+    if (catalog.length === 0 && this.variants) catalog = modelsFromVariants(this.variants);
     if (catalog.length === 0) throw new Error(`no models found on ${store.productUrl}`);
     this.catalog = catalog;
-    await this.loadVariants(store.html);
-    const selected = selectProducts(filterVariants(catalog, this.variants, this.settings), model);
+    const selected = selectProducts(filterVariants(catalog, this.variants, this.settings.filters), model);
     if (selected.length === 0) throw new Error(`no ${productName(product)} model matches`);
 
     const results = { pickup: [], delivery: [] };
@@ -245,8 +279,10 @@ export function summarize(selected, { pickup, delivery }) {
   });
 }
 
+const MAX_LINES = 15;
+
 export function buildMessage(items, names, url) {
-  const lines = items.map((item) => {
+  const lines = items.slice(0, MAX_LINES).map((item) => {
     const name = names.get(item.partNumber) ?? item.title ?? item.partNumber;
     if ('storeNumber' in item) return `Pickup: ${name} at ${item.storeName} (${item.distance}) - ${item.quote}`;
     return `2-hr courier: ${name} - ${item.courierText || 'available'}`;
@@ -255,9 +291,14 @@ export function buildMessage(items, names, url) {
   const firstName = names.get(first.partNumber) ?? first.partNumber;
   const where = 'storeNumber' in first ? `pickup at ${first.storeName}` : '2-hr courier';
   const more = items.length > 1 ? ` (+${items.length - 1} more)` : '';
+  if (items.length > MAX_LINES) lines.push(`…and ${items.length - MAX_LINES} more`);
   return { subject: `In stock: ${firstName}, ${where}${more}`, text: lines.join('\n'), url };
 }
 
 function pick(obj) {
-  return Object.fromEntries(Object.entries(obj ?? {}).filter(([k]) => SETTING_KEYS.includes(k)));
+  const out = Object.fromEntries(Object.entries(obj ?? {}).filter(([k]) => SETTING_KEYS.includes(k)));
+  if (!out.filters && (obj?.colors || obj?.capacities)) {
+    out.filters = normalizeFilters({ dimensionColor: obj.colors, dimensionCapacity: obj.capacities });
+  }
+  return out;
 }

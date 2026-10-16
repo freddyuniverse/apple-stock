@@ -2,7 +2,7 @@
 
 Get pinged the moment an Apple product can be picked up at a store near you, or sent by Apple's 2-hour courier delivery.
 
-It was built for the iPhone Duo on apple.com/ca, but it should work for any iPhone on any Apple Store country site that has a `buy-iphone/<product>` page.
+It was built for the iPhone Duo on apple.com/ca, and works for every iPhone, iPad and AirPods model in the store (Mac and Apple Watch aren't supported yet). Pick one from the menu in the UI and narrow it down by colour, storage, size or connectivity.
 
 ## How it works
 
@@ -52,7 +52,7 @@ The workflow is scheduled every 5 minutes, but GitHub often starts scheduled run
 | --- | --- | --- |
 | `POSTAL_CODE` | (required) | Location used for store search and courier delivery, e.g. `M5V3L9` |
 | `COUNTRY` | `ca` | Apple Store country path (`ca`, `uk`, `au`, ... or `us`) |
-| `PRODUCT` | `iphone-duo` | The `buy-iphone/<product>` page slug |
+| `PRODUCT` | `iphone-duo` | Store page path, e.g. `buy-iphone/iphone-17`, `buy-ipad/ipad-air`, `buy-airpods/airpods-pro-3` (a bare slug means `buy-iphone/<slug>`) |
 | `MODELS` | `all` | Comma-separated part numbers or words that must all appear in the model name, e.g. `256GB Night Sky, 512GB` |
 | `MAX_DISTANCE_KM` | `50` | Ignore stores farther than this |
 | `INTERVAL_SECONDS` | `120` | Time between checks for `npm start` (minimum 30, with ±15% jitter) |

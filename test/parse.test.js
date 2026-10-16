@@ -93,6 +93,11 @@ test('summarize reports nearest pickup store, courier and fallback text', async 
   ]);
   const msg = buildMessage([{ ...results.pickup[0], storeNumber: 'R121' }], new Map([['A', selected[0].name]]), 'https://x');
   assert.equal(msg.subject, 'In stock: iPhone Duo 256GB Star White, pickup at Eaton Centre');
+  const many = Array.from({ length: 40 }, (_, i) => ({ ...results.pickup[0], storeNumber: `R${i}` }));
+  const long = buildMessage(many, new Map(), 'https://x');
+  assert.equal(long.text.split('\n').length, 16);
+  assert.match(long.text, /…and 25 more$/);
+  assert.match(long.subject, /\(\+39 more\)$/);
 });
 
 test('shortPickupQuote compresses Apple pickup messages', () => {
@@ -102,19 +107,59 @@ test('shortPickupQuote compresses Apple pickup messages', () => {
   assert.equal(shortPickupQuote(undefined), '');
 });
 
+const page = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
+
 test('parseCatalog reads colours, capacities, images and prices', async () => {
   const { filterVariants } = await import('../src/checker.js');
-  const c = parseCatalog(readFileSync(new URL('./fixtures/duo-page.html', import.meta.url), 'utf8'));
-  assert.deepEqual(c.colors.map((x) => [x.key, x.name]), [['starwhite', 'Star White'], ['nightsky', 'Night Sky']]);
-  assert.match(c.colors[0].swatch, /^https:\/\/store\.storeimages\.cdn-apple\.com\/.*iphone-duo-finish-star-white.*&hei=/);
-  assert.deepEqual(c.capacities.map((x) => x.name), ['256GB', '512GB', '1TB', '2TB']);
+  const c = parseCatalog(page('duo-page.html'));
+  const [colors, capacities] = c.dimensions;
+  assert.equal(colors.key, 'dimensionColor');
+  assert.deepEqual(colors.options.map((x) => [x.key, x.name]), [['starwhite', 'Star White'], ['nightsky', 'Night Sky']]);
+  assert.match(colors.options[0].swatch, /^https:\/\/store\.storeimages\.cdn-apple\.com\/.*iphone-duo-finish-star-white.*&hei=/);
+  assert.deepEqual(capacities.options.map((x) => x.name), ['256GB', '512GB', '1TB', '2TB']);
   assert.equal(c.models.length, 8);
   const m = c.models.find((x) => x.partNumber === 'MK244VC/A');
-  assert.deepEqual([m.color, m.capacity, m.price], ['starwhite', '256gb', 2999]);
+  assert.deepEqual([m.dims, m.price], [{ dimensionColor: 'starwhite', dimensionCapacity: '256gb' }, 2999]);
   assert.match(m.image, /iphone-duo-finish-select-star-white-202609\?wid=/);
-  assert.match(c.productImages['iphone-17'], /iphone-compare-iphone-17-\d{6}\?wid=400&hei=512/);
+  assert.match(c.productImages['buy-iphone/iphone-17'], /iphone-compare-iphone-17-\d{6}\?wid=400&hei=512/);
   assert.equal(parseCatalog('<html></html>'), null);
   const all = c.models.map((x) => ({ partNumber: x.partNumber }));
-  assert.equal(filterVariants(all, c, { colors: [], capacities: [] }).length, 8);
-  assert.deepEqual(filterVariants(all, c, { colors: ['nightsky'], capacities: ['256gb', '1tb'] }).map((x) => x.partNumber).sort(), ['MK254VC/A', 'MK294VC/A']);
+  assert.equal(filterVariants(all, c, {}).length, 8);
+  const picked = filterVariants(all, c, { dimensionColor: ['nightsky'], dimensionCapacity: ['256gb', '1tb'] });
+  assert.deepEqual(picked.map((x) => x.partNumber).sort(), ['MK254VC/A', 'MK294VC/A']);
+});
+
+test('parseCatalog handles iPad size, storage and connectivity options', async () => {
+  const { filterVariants } = await import('../src/checker.js');
+  const c = parseCatalog(page('ipad-air-page.html'));
+  assert.equal(c.title, 'iPad Air');
+  assert.deepEqual(c.dimensions.map((d) => d.key), ['dimensionScreensize', 'dimensionColor', 'dimensionCapacity', 'dimensionConnection']);
+  assert.deepEqual(c.dimensions[3].options.map((o) => o.name), ['Wi-Fi', 'Wi-Fi + Cellular']);
+  assert.deepEqual(c.dimensions[0].options.map((o) => o.name), ['11-inch model', '13-inch model']);
+  assert.equal(c.models.length, 64);
+  assert.ok(c.models.every((m) => m.price > 0 && m.image));
+  const all = c.models.map((x) => ({ partNumber: x.partNumber }));
+  assert.equal(filterVariants(all, c, { dimensionScreensize: ['13inch'], dimensionConnection: ['wifi'], dimensionCapacity: ['256gb'] }).length, 4);
+});
+
+test('AirPods pages without a metrics list still produce named models', async () => {
+  const { modelsFromVariants } = await import('../src/checker.js');
+  const html = page('airpods5-page.html');
+  assert.deepEqual(parseProducts(html), []);
+  const c = parseCatalog(html);
+  assert.equal(c.title, 'AirPods 5');
+  assert.deepEqual(c.dimensions.map((d) => d.key), ['dimensionCharging']);
+  const models = modelsFromVariants(c);
+  assert.equal(models.length, 2);
+  assert.deepEqual(models.map((m) => [m.name, m.price]), [['AirPods 5', 179], ['AirPods 5 with Wireless Charging Case', 209]]);
+});
+
+test('product ids accept old iPhone slugs and reject unknown paths', async () => {
+  const { normalizeProduct, productName } = await import('../src/apple.js');
+  assert.equal(normalizeProduct('iphone-duo'), 'buy-iphone/iphone-duo');
+  assert.equal(normalizeProduct('/buy-ipad/ipad-mini/'), 'buy-ipad/ipad-mini');
+  assert.throws(() => normalizeProduct('buy-ipad/../../x'), /unsupported/);
+  assert.throws(() => normalizeProduct('buy-mac/macbook-air'), /unsupported/);
+  assert.equal(productName('buy-ipad/ipad-mini'), 'iPad mini');
+  assert.equal(productName('buy-airpods/airpods-max-2'), 'AirPods Max 2');
 });

@@ -1,4 +1,15 @@
 import { chromium } from 'playwright';
+import { parseCatalog } from './parse.js';
+
+const PRODUCT_ID = /^buy-(iphone|ipad|airpods)\/[a-z0-9-]+$/;
+const INDEX_PAGES = ['buy-iphone', 'buy-ipad'];
+
+export function normalizeProduct(value) {
+  let id = String(value ?? '').trim().replace(/^\/+|\/+$/g, '');
+  if (!id.includes('/')) id = `buy-iphone/${id}`;
+  if (!PRODUCT_ID.test(id)) throw new Error(`unsupported product ${value}`);
+  return id;
+}
 
 const PLATFORM_UA = {
   darwin: 'Macintosh; Intel Mac OS X 10_15_7',
@@ -30,7 +41,11 @@ export class AppleStore {
   }
 
   get productUrl() {
-    return `${this.origin}${this.shopPath}/buy-iphone/${this.product}`;
+    return this.urlFor(this.product);
+  }
+
+  urlFor(product) {
+    return `${this.origin}${this.shopPath}/${normalizeProduct(product)}`;
   }
 
   async open() {
@@ -56,20 +71,39 @@ export class AppleStore {
     this.html = await this.page.content();
   }
 
-  async fetchPage() {
-    const res = await fetch(this.productUrl, { headers: { 'User-Agent': userAgentFor('130'), 'Accept-Language': 'en-CA' } });
-    if (!res.ok) throw new Error(`${this.productUrl} returned ${res.status}`);
+  async fetchPage(product = this.product) {
+    const url = this.urlFor(product);
+    const res = await fetch(url, { headers: { 'User-Agent': userAgentFor('130'), 'Accept-Language': 'en-CA' }, redirect: 'manual' });
+    if (res.status !== 200) throw new Error(`${url} returned ${res.status}`);
     return res.text();
   }
 
+  async findProductIds() {
+    const get = async (path) => {
+      const res = await fetch(`${this.origin}${path}`, { headers: { 'User-Agent': userAgentFor('130') } });
+      return res.ok ? res.text() : '';
+    };
+    const country = this.country === 'us' ? '' : `/${this.country}`;
+    const [airpods, ...indexes] = await Promise.all([get(`${country}/airpods/`), ...INDEX_PAGES.map((c) => get(`${this.shopPath}/${c}`))]);
+    const ids = new Set();
+    indexes.forEach((html, i) => {
+      for (const m of html.matchAll(new RegExp(`${this.shopPath}/${INDEX_PAGES[i]}/([a-z0-9-]+)`, 'g'))) ids.add(`${INDEX_PAGES[i]}/${m[1]}`);
+    });
+    for (const m of airpods.matchAll(/shop\/goto\/buy_airpods\/([a-z0-9_]+)/g)) ids.add(`buy-airpods/${m[1].replace(/_/g, '-')}`);
+    return [...ids];
+  }
+
+  // Only pages with a product selector we can read make it into the menu.
   async listProducts() {
-    const res = await fetch(`${this.origin}${this.shopPath}/buy-iphone`, { headers: { 'User-Agent': userAgentFor('130') } });
-    if (!res.ok) return [];
-    const html = await res.text();
-    const prefix = `${this.shopPath}/buy-iphone/`;
-    const slugs = new Set();
-    for (const m of html.matchAll(new RegExp(`${prefix.replace(/\//g, '\\/')}(iphone-[a-z0-9-]+)`, 'g'))) slugs.add(m[1]);
-    return [...slugs].sort().map((slug) => ({ slug, name: productName(slug) }));
+    const found = await Promise.all(
+      (await this.findProductIds()).map(async (slug) => {
+        const catalog = await this.fetchPage(slug).then(parseCatalog, () => null);
+        if (!catalog) return null;
+        return { slug, name: catalog.title ?? productName(slug), image: catalog.models[0]?.image ?? null };
+      }),
+    );
+    const order = (slug) => ['buy-iphone', 'buy-ipad', 'buy-airpods'].indexOf(slug.split('/')[0]);
+    return found.filter(Boolean).sort((a, b) => order(a.slug) - order(b.slug) || a.name.localeCompare(b.name, 'en', { numeric: true }));
   }
 
   async close() {
@@ -104,9 +138,13 @@ export class AppleStore {
   }
 }
 
+const WORDS = { iphone: 'iPhone', ipad: 'iPad', airpods: 'AirPods', mini: 'mini' };
+
 export function productName(slug) {
   return slug
+    .split('/')
+    .pop()
     .split('-')
-    .map((w) => (w === 'iphone' ? 'iPhone' : w.charAt(0).toUpperCase() + w.slice(1)))
+    .map((w) => WORDS[w] ?? w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
 }

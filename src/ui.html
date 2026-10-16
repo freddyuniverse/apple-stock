@@ -23,13 +23,14 @@
   .top { display: grid; grid-template-columns: 1.15fr 1fr; gap: 56px; align-items: start; }
   .hero { position: sticky; top: 24px; aspect-ratio: 1 / 1.05; background: var(--panel); border-radius: 28px; display: grid; place-items: center; overflow: hidden; }
   .hero img { width: 78%; height: 86%; object-fit: contain; transition: opacity .25s; }
+  @media (prefers-color-scheme: light) { .hero img, .menu img, .list img { mix-blend-mode: multiply; } }
   .side { display: grid; gap: 36px; }
   .picker { position: relative; }
   .picker > button { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; font-size: 40px; line-height: 1.1; font-weight: 600; letter-spacing: -0.003em; }
   .picker > button::after { content: ""; width: 10px; height: 10px; border: solid var(--dim); border-width: 0 2px 2px 0; transform: translateY(-4px) rotate(45deg); transition: transform .2s; }
   .picker.open > button::after { transform: translateY(2px) rotate(-135deg); }
   .price { color: var(--dim); margin-top: 6px; min-height: 25px; }
-  .menu { position: absolute; z-index: 2; top: calc(100% + 10px); left: -8px; min-width: 300px; margin: 0; padding: 8px; list-style: none; background: var(--menu); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 16px 48px rgba(0,0,0,.14); }
+  .menu { max-height: min(70vh, 560px); overflow-y: auto; position: absolute; z-index: 2; top: calc(100% + 10px); left: -8px; min-width: 300px; margin: 0; padding: 8px; list-style: none; background: var(--menu); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 16px 48px rgba(0,0,0,.14); }
   .picker:not(.open) .menu { display: none; }
   .menu button { display: flex; align-items: center; gap: 14px; width: 100%; padding: 8px 12px; background: none; border: 0; border-radius: 12px; text-align: left; font-size: 17px; }
   .menu button:hover, .menu button.on { background: var(--panel); }
@@ -40,6 +41,8 @@
   .dots img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
   .hint { color: var(--dim); font-size: 14px; margin-top: 12px; }
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  #options { display: grid; gap: 36px; }
+  #options:empty { display: none; }
   .tiles button { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 18px; background: none; border: 0; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line); text-align: left; transition: box-shadow .15s; }
   .tiles button:hover { box-shadow: inset 0 0 0 1px var(--dim); }
   .tiles button.on { box-shadow: inset 0 0 0 2px var(--blue); }
@@ -97,11 +100,7 @@
         </div>
         <div class="price" id="price"></div>
       </div>
-      <div id="colorSection">
-        <div class="dots" id="dots"></div>
-        <div class="hint" id="colorHint"></div>
-      </div>
-      <div class="tiles" id="tiles"></div>
+      <div id="options"></div>
       <div class="fields">
         <div class="row2">
           <input class="field" id="postal" placeholder="Postal code" maxlength="7" autocomplete="postal-code">
@@ -137,7 +136,7 @@ const el = (tag, props = {}, ...kids) => {
 };
 const img = (src, cls) => (src ? el('img', { src, alt: '', loading: 'lazy' }) : el('div', { className: cls ?? 'ph' }));
 const money = (n) => (n == null ? '' : `$${Number(n).toLocaleString('en-CA', { maximumFractionDigits: 0 })}`);
-const short = (name) => name.replace(/^iPhone .*?(?=\d+\s*(GB|TB))/, '');
+const short = (name, product) => (product && /^[^a-z]/.test(name.slice(product.length + 1)) && name.startsWith(`${product} `) ? name.slice(product.length + 1) : name);
 const ago = (iso) => {
   const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
   return s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
@@ -158,7 +157,11 @@ async function api(path, body) {
   render();
 }
 const save = (patch) => api('/api/settings', patch);
-const toggle = (list, key) => (list.includes(key) ? list.filter((k) => k !== key) : [...list, key]);
+const toggle = (list = [], key) => (list.includes(key) ? list.filter((k) => k !== key) : [...list, key]);
+const COLOR = 'dimensionColor';
+const wanted = (dim) => state.settings.filters[dim] ?? [];
+const matches = (m, skip) => Object.entries(state.settings.filters).every(([d, keys]) => d === skip || !keys.length || !(d in m.dims) || keys.includes(m.dims[d]));
+const setFilter = (dim, key) => save({ filters: { ...state.settings.filters, [dim]: toggle(wanted(dim), key) } });
 
 function render() {
   if (!state) return;
@@ -176,18 +179,15 @@ function render() {
 }
 
 function selectedModels() {
-  const { settings, variants } = state;
-  if (!variants) return [];
-  return variants.models.filter((m) =>
-    (!settings.colors.length || settings.colors.includes(m.color)) &&
-    (!settings.capacities.length || settings.capacities.includes(m.capacity)));
+  return (state.variants?.models ?? []).filter((m) => matches(m));
 }
 
 function renderHero() {
   const { settings, variants, productImages } = state;
-  const color = preview ?? settings.colors[0] ?? variants?.colors[0]?.key;
-  const model = variants?.models.find((m) => m.color === color && (!settings.capacities.length || settings.capacities.includes(m.capacity)))
-    ?? variants?.models.find((m) => m.color === color);
+  const models = variants?.models ?? [];
+  const model = preview
+    ? models.find((m) => m.dims[COLOR] === preview && matches(m, COLOR)) ?? models.find((m) => m.dims[COLOR] === preview)
+    : selectedModels()[0] ?? models[0];
   const src = model?.image ?? productImages[settings.product] ?? '';
   if ($('hero').getAttribute('src') !== src) $('hero').src = src;
 }
@@ -209,30 +209,31 @@ function renderControls() {
   const price = minPrice(selectedModels());
   $('price').textContent = price == null ? '' : `From ${money(price)}`;
 
-  $('colorSection').hidden = !variants;
-  $('tiles').hidden = !variants;
-  if (variants) {
-    $('dots').replaceChildren(...variants.colors.map((c) => el('button', {
-      type: 'button',
-      title: c.name,
-      ariaLabel: c.name,
-      className: settings.colors.includes(c.key) ? 'on' : '',
-      onclick: () => save({ colors: toggle(settings.colors, c.key) }),
-      onmouseenter: () => { preview = c.key; renderHero(); },
-      onmouseleave: () => { preview = null; renderHero(); },
-    }, img(c.swatch))));
-    const names = variants.colors.filter((c) => settings.colors.includes(c.key)).map((c) => c.name);
-    $('colorHint').textContent = names.length ? names.join(', ') : 'Any colour';
-
-    $('tiles').replaceChildren(...variants.capacities.map((c) => {
-      const p = minPrice(variants.models.filter((m) => m.capacity === c.key && (!settings.colors.length || settings.colors.includes(m.color))));
+  $('options').replaceChildren(...(variants?.dimensions ?? []).map((dim) => {
+    const on = wanted(dim.key);
+    if (dim.key === COLOR) {
+      const names = dim.options.filter((o) => on.includes(o.key)).map((o) => o.name);
+      return el('div', {},
+        el('div', { className: 'dots' }, ...dim.options.map((o) => el('button', {
+          type: 'button',
+          title: o.name,
+          ariaLabel: o.name,
+          className: on.includes(o.key) ? 'on' : '',
+          onclick: () => setFilter(dim.key, o.key),
+          onmouseenter: () => { preview = o.key; renderHero(); },
+          onmouseleave: () => { preview = null; renderHero(); },
+        }, img(o.swatch)))),
+        el('div', { className: 'hint', textContent: names.length ? names.join(', ') : 'Any colour' }));
+    }
+    return el('div', { className: 'tiles' }, ...dim.options.map((o) => {
+      const p = minPrice(variants.models.filter((m) => m.dims[dim.key] === o.key && matches(m, dim.key)));
       return el('button', {
         type: 'button',
-        className: settings.capacities.includes(c.key) ? 'on' : '',
-        onclick: () => save({ capacities: toggle(settings.capacities, c.key) }),
-      }, el('b', { textContent: c.name }), el('span', { textContent: money(p) }));
+        className: on.includes(o.key) ? 'on' : '',
+        onclick: () => setFilter(dim.key, o.key),
+      }, el('b', { textContent: o.name }), el('span', { textContent: money(p) }));
     }));
-  }
+  }));
 
   if (document.activeElement !== $('postal')) $('postal').value = settings.postalCode;
   if (document.activeElement !== $('email')) $('email').value = settings.emailTo;
@@ -249,11 +250,15 @@ function renderControls() {
   renderHero();
 }
 
+function productTitle() {
+  return state.products.find((p) => p.slug === state.settings.product)?.name;
+}
+
 function renderRows() {
   const images = new Map((state.variants?.models ?? []).map((m) => [m.partNumber, m.image]));
   $('rows').replaceChildren(...state.models.map((m) => el('li', { className: m.hit ? 'hit' : '' },
     img(images.get(m.partNumber)),
-    el('b', { textContent: short(m.name) }),
+    el('b', { textContent: short(m.name, productTitle()) }),
     el('span', { textContent: m.status }))));
 }
 

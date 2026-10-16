@@ -93,25 +93,53 @@ function stripHtml(s) {
   return String(s).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 }
 
+const SKIP_DIMENSIONS = new Set(['dimensionSteporder']);
+
 export function parseCatalog(html) {
   const data = productSelectionData(html);
-  if (!data?.products) return null;
+  const products = (data?.products ?? []).filter((p) => p.partNumber);
+  if (!products.length) return null;
   const values = data.displayValues ?? {};
   const images = data.imageDictionary ?? {};
-  const variants = (dimension, map) =>
-    (values[dimension]?.variantOrder ?? []).map((key) => ({ key, ...map(values[dimension][key] ?? {}, key) }));
+  const keys = [...new Set([...(data.sections ?? []).map((s) => s.dimension ?? s.formFieldName), ...Object.keys(values)])].filter(
+    (k) => /^dimension/.test(k ?? '') && !SKIP_DIMENSIONS.has(k) && values[k]?.variantOrder,
+  );
+  const dimensions = keys
+    .map((key) => ({
+      key,
+      options: values[key].variantOrder
+        .filter((v) => products.some((p) => p[key] === v))
+        .map((v) => ({
+          key: v,
+          name: optionLabel(values[key][v]?.value ?? v),
+          ...(key === 'dimensionColor' && { swatch: imgSrc(values[key][v]?.image) }),
+        })),
+    }))
+    .filter((d) => d.options.length > 1);
   return {
-    colors: variants('dimensionColor', (v, key) => ({ name: stripHtml(v.value ?? key), swatch: imgSrc(v.image) })),
-    capacities: variants('dimensionCapacity', (v, key) => ({ name: stripHtml(String(v.value ?? key).split('<as-footnote')[0]) })),
-    models: data.products.map((p) => ({
+    title: pageTitle(html),
+    dimensions,
+    models: products.map((p) => ({
       partNumber: p.partNumber,
-      color: p.dimensionColor,
-      capacity: p.dimensionCapacity,
+      dims: Object.fromEntries(keys.map((k) => [k, p[k]])),
       image: firstSrc(images[p.imageKey]?.sources?.[0]?.srcSet),
-      price: values.prices?.[p.fullPrice]?.amountBeforeTradeIn ?? null,
+      price: values.prices?.[p.fullPrice]?.amountBeforeTradeIn ?? pricePart(p.price),
     })),
     productImages: compareImages(html),
   };
+}
+
+function optionLabel(value) {
+  return stripHtml(String(value).split(/<as-footnote|<div/)[0].replace(/&nbsp;|\u00a0/g, ' '));
+}
+
+function pricePart(value) {
+  return typeof value === 'string' && /^\d+_\d{2}$/.test(value) ? Number(value.replace('_', '.')) : null;
+}
+
+export function pageTitle(html) {
+  const title = html.match(/<title>([^<]*)<\/title>/)?.[1]?.replace(/&nbsp;|\u00a0/g, ' ');
+  return title?.replace(/^(Buy|Shop)\s+/, '').replace(/\s+-\s+Apple.*$/, '').trim() || null;
 }
 
 function productSelectionData(html) {
@@ -141,7 +169,7 @@ function productSelectionData(html) {
 function compareImages(html) {
   const out = {};
   const re = /https:\/\/store\.storeimages\.cdn-apple\.com\/[^"\s\\]*?\/is\/iphone-compare-(iphone-[a-z0-9-]+?)-\d{6}\?wid=400&(?:amp;)?hei=512[^"\s\\]*/g;
-  for (const m of html.matchAll(re)) out[m[1]] ??= m[0].replace(/&amp;/g, '&');
+  for (const m of html.matchAll(re)) out[`buy-iphone/${m[1]}`] ??= m[0].replace(/&amp;/g, '&');
   return out;
 }
 
