@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>apple-stock</title>
+<style>
+  :root { color-scheme: light dark; --fg: #111; --bg: #fff; --dim: #8a8a8a; --hit: #0a7d32; --line: #e6e6e6; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #eaeaea; --bg: #0d0d0d; --dim: #6f6f6f; --hit: #4ade80; --line: #222; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 20px; }
+  form { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+  select, input, button { font: inherit; color: inherit; background: none; border: 0; padding: 2px 0; border-bottom: 1px solid transparent; border-radius: 0; }
+  select { appearance: none; cursor: pointer; }
+  select:hover, input:hover, select:focus, input:focus { border-bottom-color: var(--dim); outline: none; }
+  input { width: 7.5ch; text-transform: uppercase; }
+  input[type=email] { width: 15ch; text-transform: none; }
+  input::placeholder { color: var(--dim); text-transform: none; }
+  button { cursor: pointer; color: var(--dim); margin-left: auto; }
+  button:hover { color: var(--fg); }
+  ul { list-style: none; margin: 20px 0 0; padding: 0; }
+  li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 16px; padding: 6px 0; }
+  li span:first-child { white-space: nowrap; }
+  li span:last-child { color: var(--dim); text-align: right; margin-left: auto; }
+  li.hit span:last-child { color: var(--hit); }
+  footer { margin-top: 28px; color: var(--dim); }
+  footer.err { color: #d33; }
+</style>
+</head>
+<body>
+<main>
+  <form id="f">
+    <select name="product"></select>
+    <select name="model"></select>
+    <input name="postalCode" placeholder="postal code" maxlength="7" autocomplete="postal-code">
+    <select name="maxDistanceKm">
+      <option value="5">5 km</option><option value="10">10 km</option><option value="25">25 km</option>
+      <option value="50">50 km</option><option value="100">100 km</option><option value="500">500 km</option>
+    </select>
+    <input name="emailTo" type="email" placeholder="email me" autocomplete="email">
+    <button type="button" id="check">check now</button>
+  </form>
+  <ul id="rows"></ul>
+  <footer id="status"></footer>
+</main>
+<script>
+const f = document.getElementById('f');
+const rows = document.getElementById('rows');
+const status = document.getElementById('status');
+let state;
+
+const short = (name) => name.replace(/^iPhone .*?(?=\d+\s*(GB|TB))/, '');
+const opt = (value, text, selected) => Object.assign(document.createElement('option'), { value, textContent: text, selected });
+const ago = (iso) => {
+  const s = Math.round((Date.now() - new Date(iso)) / 1000);
+  return s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
+};
+
+function render() {
+  const { settings, products, catalog, models, checking, lastChecked, error } = state;
+  if (document.activeElement?.form !== f) {
+    f.product.replaceChildren(...products.map((p) => opt(p.slug, p.name, p.slug === settings.product)));
+    f.model.replaceChildren(opt('all', 'all models', settings.model === 'all'),
+      ...catalog.map((p) => opt(p.partNumber, short(p.name), p.partNumber === settings.model)));
+    if (settings.model !== 'all' && !catalog.some((p) => p.partNumber === settings.model)) f.model.append(opt(settings.model, settings.model, true));
+    f.postalCode.value = settings.postalCode;
+    f.maxDistanceKm.value = String(settings.maxDistanceKm);
+    f.emailTo.value = settings.emailTo;
+    f.emailTo.hidden = !state.emailEnabled;
+  }
+  rows.replaceChildren(...models.map((m) => {
+    const li = document.createElement('li');
+    li.className = m.hit ? 'hit' : '';
+    li.append(Object.assign(document.createElement('span'), { textContent: short(m.name) }),
+      Object.assign(document.createElement('span'), { textContent: m.status }));
+    return li;
+  }));
+  status.className = error ? 'err' : '';
+  status.textContent = error ? error : checking ? 'checking…' : lastChecked ? `checked ${ago(lastChecked)}` : '';
+}
+
+async function load() {
+  state = await (await fetch('/api/state')).json();
+  render();
+}
+
+async function save() {
+  const body = Object.fromEntries(new FormData(f));
+  state = await (await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+  render();
+}
+
+f.addEventListener('change', save);
+f.addEventListener('submit', (e) => { e.preventDefault(); save(); });
+document.getElementById('check').onclick = async () => {
+  state = await (await fetch('/api/check', { method: 'POST' })).json();
+  render();
+};
+
+load();
+setInterval(load, 3000);
+</script>
+</body>
+</html>

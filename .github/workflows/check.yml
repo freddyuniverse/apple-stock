@@ -1,0 +1,49 @@
+name: Check stock
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: check-stock
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.event_name == 'workflow_dispatch' || vars.POSTAL_CODE != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Restore last seen availability
+        uses: actions/cache/restore@v4
+        with:
+          path: .state.json
+          key: stock-state-${{ github.run_id }}
+          restore-keys: stock-state-
+      - name: Check
+        run: npm run check
+        env:
+          POSTAL_CODE: ${{ vars.POSTAL_CODE }}
+          COUNTRY: ${{ vars.COUNTRY || 'ca' }}
+          PRODUCT: ${{ vars.PRODUCT || 'iphone-duo' }}
+          MODELS: ${{ vars.MODELS || 'all' }}
+          MAX_DISTANCE_KM: ${{ vars.MAX_DISTANCE_KM || '50' }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - name: Save availability
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state.json
+          key: stock-state-${{ github.run_id }}
