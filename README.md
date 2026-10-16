@@ -2,16 +2,52 @@
 
 Get pinged the moment an Apple product can be picked up at a store near you, or sent by Apple's 2-hour courier delivery.
 
-It was built for the iPhone Duo on apple.com/ca, and works for every iPhone, iPad and AirPods model in the store (Mac and Apple Watch aren't supported yet). Pick one from the menu in the UI and narrow it down by colour, storage, size or connectivity.
+It was built for the iPhone Duo on apple.com/ca and works for every iPhone, iPad, Mac, Studio Display and AirPods model in the store (Apple Watch isn't supported yet). Pick a product from the menu in the UI and narrow it down by colour, storage, size, chip or connectivity. For Macs, only the standard configurations that stores keep in stock are listed. Custom build-to-order Macs always ship from Apple.
 
 ## How it works
 
-1. A headless Chromium opens the product page (e.g. `apple.com/ca/shop/buy-iphone/iphone-duo`) and reads every model (part number, name, price) on it.
-2. Apple's stock API (`/shop/fulfillment-messages`) has bot protection: the product page runs a proof-of-work challenge and sets a cookie, and plain HTTP clients get a `541` error. Making the API calls from inside the real page avoids that.
-3. For each model it records:
-   - **Pickup**: in-store pickup availability at each Apple Store within `MAX_DISTANCE_KM` of your postal code.
-   - **Courier**: whether 2-hour courier delivery is available to that postal code.
-4. When something goes from unavailable to available, it sends a notification by email (Resend), ntfy or Discord. The last seen state is kept in `.state.json`, so you only get pinged once per item until it sells out and comes back.
+Every couple of minutes it:
+
+1. **Opens the product page** in a hidden Chrome browser, e.g. `apple.com/ca/shop/buy-iphone/iphone-duo`. The page lists every model with its part number, colour, storage and price, and the UI is built from that list.
+2. **Asks Apple's stock API** (`/shop/fulfillment-messages`), the same one the Apple Store website uses, about each model near your postal code:
+   - **Pickup**: is it available at an Apple Store within `MAX_DISTANCE_KM`?
+   - **Courier**: can it be delivered by 2-hour courier?
+
+   Apple blocks scripts that call this API directly (they get error `541`). Calling it from inside the real page gets past that.
+3. **Compares with last time** (saved in `.state.json`). If something went from unavailable to available, it notifies you. You get one alert per item, and you'll get another if it sells out and comes back.
+
+```
+src/index.js    starts everything: the check loop and the web UI
+src/apple.js    talks to apple.com: product menu, product pages, stock API
+src/parse.js    turns Apple's pages and API replies into models and availability
+src/checker.js  settings, filters, "what's new since last check", notifications
+src/notify.js   email, ntfy and Discord; src/push.js is phone/browser push
+src/server.js   the local web UI (src/ui.html) and its small API
+```
+
+## Adding a new device to track
+
+**New models in a category it already covers** (a new iPhone, iPad, Mac or AirPods) need no work. On every start, the menu is rebuilt from Apple's own store pages.
+
+**A new category** (e.g. Apple Watch or Vision Pro) is one row in `CATEGORIES` at the top of [`src/apple.js`](src/apple.js):
+
+```js
+{ id: 'buy-vision', index: 'shop/buy-vision', link: /shop\/buy-vision\/([a-z0-9-]+)/g },
+```
+
+- `id`: the part of the store URL before the model, as in `apple.com/ca/shop/buy-vision/apple-vision-pro`.
+- `index`: a page that links to every model in that category.
+- `link`: the pattern of those links; the bit in brackets is the model name.
+
+Then restart and check that it shows up in the menu.
+
+If it doesn't, Apple's product page uses a layout the app can't read yet. `parseCatalog` in [`src/parse.js`](src/parse.js) reads the two layouts Apple uses today:
+- iPhone/iPad/AirPods pages: `displayValues` + `products[].partNumber`.
+- Mac pages: `mainDisplayValues` + `products[].btrOrFdPartNumber`.
+
+A new layout needs a function like `parseMacCatalog` that returns the same shape: a `title`, the option `dimensions`, and `models` with a part number, chosen options, image and price. To see what the page contains, run `productSelectionData(html)` on it. Then add a trimmed copy of the page to `test/fixtures/` with a test (`npm test`).
+
+You can also skip the UI and set `PRODUCT=buy-vision/apple-vision-pro` in `.env`.
 
 ## Run it at home (recommended)
 
@@ -52,7 +88,7 @@ The workflow is scheduled every 5 minutes, but GitHub often starts scheduled run
 | --- | --- | --- |
 | `POSTAL_CODE` | (required) | Location used for store search and courier delivery, e.g. `M5V3L9` |
 | `COUNTRY` | `ca` | Apple Store country path (`ca`, `uk`, `au`, ... or `us`) |
-| `PRODUCT` | `iphone-duo` | Store page path, e.g. `buy-iphone/iphone-17`, `buy-ipad/ipad-air`, `buy-airpods/airpods-pro-3` (a bare slug means `buy-iphone/<slug>`) |
+| `PRODUCT` | `iphone-duo` | Store page path, e.g. `buy-iphone/iphone-17`, `buy-ipad/ipad-air`, `buy-mac/macbook-air`, `buy-airpods/airpods-pro-3` (a bare slug means `buy-iphone/<slug>`) |
 | `MODELS` | `all` | Comma-separated part numbers or words that must all appear in the model name, e.g. `256GB Night Sky, 512GB` |
 | `MAX_DISTANCE_KM` | `50` | Ignore stores farther than this |
 | `INTERVAL_SECONDS` | `120` | Time between checks for `npm start` (minimum 30, with ±15% jitter) |

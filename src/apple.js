@@ -1,8 +1,16 @@
 import { chromium } from 'playwright';
 import { parseCatalog } from './parse.js';
 
-const PRODUCT_ID = /^buy-(iphone|ipad|airpods)\/[a-z0-9-]+$/;
-const INDEX_PAGES = ['buy-iphone', 'buy-ipad'];
+// One row per kind of device: its store path, the page that links to every
+// model, and what those links look like. Model pages can use either layout
+// parseCatalog reads.
+const CATEGORIES = [
+  { id: 'buy-iphone', index: 'shop/buy-iphone', link: /shop\/buy-iphone\/([a-z0-9-]+)/g },
+  { id: 'buy-ipad', index: 'shop/buy-ipad', link: /shop\/buy-ipad\/([a-z0-9-]+)/g },
+  { id: 'buy-mac', index: 'shop/buy-mac', link: /shop\/buy-mac\/([a-z0-9-]+)/g },
+  { id: 'buy-airpods', index: 'airpods/', link: /shop\/goto\/buy_airpods\/([a-z0-9_]+)/g },
+];
+const PRODUCT_ID = new RegExp(`^(${CATEGORIES.map((c) => c.id).join('|')})/[a-z0-9-]+$`);
 
 export function normalizeProduct(value) {
   let id = String(value ?? '').trim().replace(/^\/+|\/+$/g, '');
@@ -84,12 +92,11 @@ export class AppleStore {
       return res.ok ? res.text() : '';
     };
     const country = this.country === 'us' ? '' : `/${this.country}`;
-    const [airpods, ...indexes] = await Promise.all([get(`${country}/airpods/`), ...INDEX_PAGES.map((c) => get(`${this.shopPath}/${c}`))]);
+    const pages = await Promise.all(CATEGORIES.map((c) => get(`${country}/${c.index}`)));
     const ids = new Set();
-    indexes.forEach((html, i) => {
-      for (const m of html.matchAll(new RegExp(`${this.shopPath}/${INDEX_PAGES[i]}/([a-z0-9-]+)`, 'g'))) ids.add(`${INDEX_PAGES[i]}/${m[1]}`);
+    CATEGORIES.forEach((c, i) => {
+      for (const m of pages[i].matchAll(c.link)) ids.add(`${c.id}/${m[1].replace(/_/g, '-')}`);
     });
-    for (const m of airpods.matchAll(/shop\/goto\/buy_airpods\/([a-z0-9_]+)/g)) ids.add(`buy-airpods/${m[1].replace(/_/g, '-')}`);
     return [...ids];
   }
 
@@ -102,7 +109,7 @@ export class AppleStore {
         return { slug, name: catalog.title ?? productName(slug), image: catalog.models[0]?.image ?? null };
       }),
     );
-    const order = (slug) => ['buy-iphone', 'buy-ipad', 'buy-airpods'].indexOf(slug.split('/')[0]);
+    const order = (slug) => CATEGORIES.findIndex((c) => slug.startsWith(`${c.id}/`));
     return found.filter(Boolean).sort((a, b) => order(a.slug) - order(b.slug) || a.name.localeCompare(b.name, 'en', { numeric: true }));
   }
 

@@ -154,12 +154,32 @@ test('AirPods pages without a metrics list still produce named models', async ()
   assert.deepEqual(models.map((m) => [m.name, m.price]), [['AirPods 5', 179], ['AirPods 5 with Wireless Charging Case', 209]]);
 });
 
+test('Mac pages list only preconfigured in-store models', async () => {
+  const { modelsFromVariants } = await import('../src/checker.js');
+  const c = parseCatalog(page('macbook-pro-page.html'));
+  assert.equal(c.title, 'MacBook Pro');
+  assert.deepEqual(c.dimensions.map((d) => d.key), [
+    'dimensionScreensize', 'dimensionColor', 'dimensionFinish', 'dimensionChip', 'dimensionChipCpuCoreCountGpuCoreCount',
+  ]);
+  assert.equal(c.models.length, 13);
+  assert.ok(c.models.every((m) => /^[A-Z0-9]{5}LL\/A$/.test(m.partNumber)));
+  const colors = c.dimensions.find((d) => d.key === 'dimensionColor').options;
+  assert.deepEqual(colors.map((o) => o.name), ['Space Black', 'Silver']);
+  assert.ok(colors.every((o) => o.swatch.startsWith('https://')));
+  const m = c.models.find((x) => x.partNumber === 'MEQJ4LL/A');
+  assert.equal(m.price, 3024);
+  assert.match(m.image, /mbp14-spaceblack-cto-hero-202410\?wid=904/);
+  const name = modelsFromVariants(c).find((x) => x.partNumber === 'MEQJ4LL/A').name;
+  assert.equal(name, 'MacBook Pro 14-inch Space Black Nano-texture display M5 chip 10-core CPU, 10-core GPU');
+});
+
 test('product ids accept old iPhone slugs and reject unknown paths', async () => {
   const { normalizeProduct, productName } = await import('../src/apple.js');
   assert.equal(normalizeProduct('iphone-duo'), 'buy-iphone/iphone-duo');
   assert.equal(normalizeProduct('/buy-ipad/ipad-mini/'), 'buy-ipad/ipad-mini');
   assert.throws(() => normalizeProduct('buy-ipad/../../x'), /unsupported/);
-  assert.throws(() => normalizeProduct('buy-mac/macbook-air'), /unsupported/);
+  assert.equal(normalizeProduct('buy-mac/macbook-air'), 'buy-mac/macbook-air');
+  assert.throws(() => normalizeProduct('buy-watch/apple-watch'), /unsupported/);
   assert.equal(productName('buy-ipad/ipad-mini'), 'iPad mini');
   assert.equal(productName('buy-airpods/airpods-max-2'), 'AirPods Max 2');
 });

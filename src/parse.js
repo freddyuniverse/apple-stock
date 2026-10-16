@@ -97,6 +97,7 @@ const SKIP_DIMENSIONS = new Set(['dimensionSteporder']);
 
 export function parseCatalog(html) {
   const data = productSelectionData(html);
+  if (data?.mainDisplayValues) return parseMacCatalog(html, data);
   const products = (data?.products ?? []).filter((p) => p.partNumber);
   if (!products.length) return null;
   const values = data.displayValues ?? {};
@@ -129,8 +130,56 @@ export function parseCatalog(html) {
   };
 }
 
+// Mac pages list build-to-order configs too; only preconfigured ones have a
+// part number, and those are the ones stores stock.
+function parseMacCatalog(html, data) {
+  const products = (data.products ?? []).filter((p) => p.btrOrFdPartNumber);
+  if (!products.length) return null;
+  const values = data.mainDisplayValues;
+  const raw = [...new Set([...(data.mainSections ?? []).map((s) => s.formFieldName), ...Object.keys(values)])].filter(
+    (k) => k && values[k]?.variantOrder,
+  );
+  const keyOf = (k) =>
+    k.includes('dimension')
+      ? k.slice(k.indexOf('dimension')).replace(/-(\w)/g, (_, c) => c.toUpperCase())
+      : `dimension${k.split('-').slice(1).map((w) => w[0].toUpperCase() + w.slice(1)).join('')}`;
+  const fallback = html.match(/property="og:image"\s+content="([^"]+)"/)?.[1].replace(/&amp;/g, '&') ?? null;
+  const colors = values['chassis-dimensionColor'] ?? {};
+  const colorImage = (v) => {
+    const name = colors[v]?.image?.imageName?.replace(/_SW_COLOR$/, '');
+    return name ? `https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/${name}?wid=904&hei=840&fmt=jpeg&qlt=90` : null;
+  };
+  const dimensions = raw
+    .map((k) => ({
+      key: keyOf(k),
+      options: values[k].variantOrder
+        .filter((v) => products.some((p) => p.dimensions?.[k] === v))
+        .map((v) => ({
+          key: v,
+          name: optionLabel(values[k][v]?.header ?? coreLabel(values[k][v]?.dimensionComponents) ?? v),
+          ...(keyOf(k) === 'dimensionColor' && { swatch: firstSrc(values[k][v]?.image?.sources?.[0]?.srcSet) }),
+        })),
+    }))
+    .filter((d) => d.options.length > 1);
+  return {
+    title: pageTitle(html),
+    dimensions,
+    models: products.map((p) => ({
+      partNumber: p.btrOrFdPartNumber,
+      dims: Object.fromEntries(raw.map((k) => [keyOf(k), p.dimensions?.[k]])),
+      image: colorImage(p.dimensions?.['chassis-dimensionColor']) ?? fallback,
+      price: values.prices?.[p.priceKey]?.amount ?? null,
+    })),
+    productImages: {},
+  };
+}
+
+function coreLabel(c) {
+  return c?.cpuCoreCount && c?.gpuCoreCount ? `${c.cpuCoreCount}-core CPU, ${c.gpuCoreCount}-core GPU` : null;
+}
+
 function optionLabel(value) {
-  return stripHtml(String(value).split(/<as-footnote|<div/)[0].replace(/&nbsp;|\u00a0/g, ' '));
+  return stripHtml(String(value).split(/<as-footnote|<div/)[0].replace(/&nbsp;|\u00a0/g, ' ').replace(/\u2011/g, '-'));
 }
 
 function pricePart(value) {
@@ -142,7 +191,7 @@ export function pageTitle(html) {
   return title?.replace(/^(Buy|Shop)\s+/, '').replace(/\s+-\s+Apple.*$/, '').trim() || null;
 }
 
-function productSelectionData(html) {
+export function productSelectionData(html) {
   const start = html.indexOf('productSelectionData:', html.indexOf('PRODUCT_SELECTION_BOOTSTRAP'));
   if (start < 0) return null;
   const open = html.indexOf('{', start);
