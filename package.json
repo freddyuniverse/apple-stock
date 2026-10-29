@@ -8,13 +8,27 @@
     "node": ">=22"
   },
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
     "start": "node --env-file-if-exists=.env src/index.js",
     "check": "node --env-file-if-exists=.env src/index.js --once",
     "test-notify": "node --env-file-if-exists=.env src/index.js --test-notify",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "lucide-react": "^1.63.0",
+    "next": "^16.4.3",
     "playwright": "1.62.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "web-push": "3.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3"
   }
 }
