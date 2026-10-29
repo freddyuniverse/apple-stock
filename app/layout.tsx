@@ -5,7 +5,7 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
-  title: 'fiindmyduo — Find an iPhone Duo in stock near you',
+  title: 'findmyduo — Find an iPhone Duo in stock near you',
   description:
     'Pick your iPhone Duo finish and storage, check Apple Store pickup near you, and get pinged the moment one is ready for pickup or 2-hour courier delivery.',
 };

@@ -10,7 +10,7 @@ type Model = { partNumber: string; name: string };
 
 function randomTopic() {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
-  return `fiindmyduo-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+  return `findmyduo-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 export function AlertsSetup({ model }: { model: Model }) {

@@ -10,7 +10,7 @@ export function Hero() {
           Sold out? Found.
         </h1>
         <p className="rise mt-4 max-w-xl text-pretty text-lg leading-relaxed text-muted-foreground md:text-xl [animation-delay:160ms]">
-          fiindmyduo watches every Apple Store near you and tells you the moment a Duo is ready for pickup or 2-hour
+          findmyduo watches every Apple Store near you and tells you the moment a Duo is ready for pickup or 2-hour
           delivery.
         </p>
         <div className="rise mt-7 flex flex-wrap items-center justify-center gap-6 [animation-delay:240ms]">

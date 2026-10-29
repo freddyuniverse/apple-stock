@@ -9,7 +9,7 @@ export function SiteNav() {
     <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl backdrop-saturate-150">
       <nav aria-label="Main" className="mx-auto flex h-12 max-w-5xl items-center justify-between px-5">
         <a href="#top" className="text-[17px] font-semibold tracking-tight">
-          fiindmyduo
+          findmyduo
         </a>
         <ul className="hidden items-center gap-8 text-xs text-foreground/80 sm:flex">
           {LINKS.map((link) => (
