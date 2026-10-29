@@ -1,27 +1,34 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowUpRight, Check, Copy } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { ArrowUpRight, Check, Copy, Mail } from 'lucide-react';
 import { TRACKER_REPO_URL, milesToKm, normalizeZip } from '@/lib/duo';
-
-const DISTANCES = [10, 25, 50, 100];
+import { ALERT_PASS, ALERT_RADII, dollars } from '@/lib/products';
+import { startAlertCheckout } from '@/app/actions/checkout';
+import { CheckoutSheet } from '@/components/checkout-sheet';
 
 type Model = { partNumber: string; name: string };
 
-function randomTopic() {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  return `findmyduo-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
-}
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const INPUT =
+  'h-14 rounded-xl border border-border bg-background px-4 text-[17px] outline-none transition placeholder:text-muted-foreground focus:border-primary focus:shadow-[0_0_0_3px_rgba(0,113,227,0.2)]';
 
 export function AlertsSetup({ model }: { model: Model }) {
+  const [email, setEmail] = useState('');
   const [postalInput, setPostalInput] = useState('');
   const [distance, setDistance] = useState(50);
-  const [topic, setTopic] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const postal = normalizeZip(postalInput);
   const showPostalError = postalInput.trim().length >= 5 && !postal;
-  const ready = Boolean(postal && topic);
+  const emailValid = EMAIL.test(email.trim());
+  const ready = Boolean(postal && emailValid);
+
+  const fetchClientSecret = useCallback(
+    () => startAlertCheckout({ email, partNumber: model.partNumber, zip: postal ?? '', radiusMiles: distance }),
+    [email, model.partNumber, postal, distance],
+  );
 
   const config = [
     `POSTAL_CODE=${postal ?? '10001'}`,
@@ -29,7 +36,6 @@ export function AlertsSetup({ model }: { model: Model }) {
     'PRODUCT=iphone-duo',
     `MODELS=${model.partNumber}`,
     `MAX_DISTANCE_KM=${milesToKm(distance)}`,
-    `NTFY_TOPIC=${topic ?? 'create-a-topic-above'}`,
   ].join('\n');
 
   async function copyConfig() {
@@ -42,18 +48,50 @@ export function AlertsSetup({ model }: { model: Model }) {
     <section id="alerts" aria-labelledby="alerts-title" className="scroll-mt-12 bg-secondary py-20 md:py-28">
       <div className="mx-auto max-w-5xl px-5">
         <h2 id="alerts-title" className="max-w-2xl text-balance text-4xl font-semibold tracking-tight md:text-5xl">
-          Get pinged the second it lands.
+          Get an email the second it lands.
         </h2>
         <p className="mt-3 max-w-xl text-pretty text-lg leading-relaxed text-muted-foreground">
-          Alerts for <span className="text-foreground">{model.name}</span>. Set it up once, and your phone buzzes when
-          a store near you has one.
+          We check Apple Stores near you around the clock for{' '}
+          <span className="text-foreground">{model.name}</span> and email you the moment one is ready for pickup.
         </p>
 
-        <div className="mt-12 grid gap-4 lg:grid-cols-2">
-          <div className="flex flex-col gap-8 rounded-apple bg-background p-7">
+        <div className="mt-12 grid gap-4 lg:grid-cols-[1.25fr_1fr]">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (ready) setOpen(true);
+            }}
+            className="flex flex-col gap-7 rounded-apple bg-background p-7"
+          >
+            <div className="flex items-baseline justify-between gap-4">
+              <p className="flex items-center gap-2 text-sm font-medium">
+                <Mail className="size-4 text-primary" aria-hidden="true" />
+                24/7 email alerts
+              </p>
+              <p className="text-sm text-muted-foreground">
+                <span className="text-2xl font-semibold tracking-tight text-foreground">{dollars(ALERT_PASS.cents)}</span>{' '}
+                once
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label htmlFor="alert-email" className="text-sm font-medium">
+                Email
+              </label>
+              <input
+                id="alert-email"
+                type="email"
+                autoComplete="email"
+                placeholder="you@icloud.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={INPUT}
+              />
+            </div>
+
             <div className="flex flex-col gap-2">
               <label htmlFor="postal" className="text-sm font-medium">
-                Your ZIP code
+                ZIP code
               </label>
               <input
                 id="postal"
@@ -65,7 +103,7 @@ export function AlertsSetup({ model }: { model: Model }) {
                 onChange={(e) => setPostalInput(e.target.value)}
                 aria-invalid={showPostalError}
                 aria-describedby="postal-hint"
-                className="h-14 rounded-xl border border-border bg-background px-4 text-[17px] uppercase outline-none transition placeholder:normal-case placeholder:text-muted-foreground focus:border-primary focus:shadow-[0_0_0_3px_rgba(0,113,227,0.2)]"
+                className={INPUT}
               />
               <p id="postal-hint" className="text-xs text-muted-foreground">
                 {showPostalError ? 'Enter a 5-digit US ZIP code, like 10001.' : 'Any Apple Store in the US.'}
@@ -75,7 +113,7 @@ export function AlertsSetup({ model }: { model: Model }) {
             <fieldset>
               <legend className="text-sm font-medium">How far would you go?</legend>
               <div className="mt-2 flex rounded-full bg-secondary p-1">
-                {DISTANCES.map((d) => (
+                {ALERT_RADII.map((d) => (
                   <label key={d} className="flex-1 cursor-pointer">
                     <input
                       type="radio"
@@ -94,38 +132,22 @@ export function AlertsSetup({ model }: { model: Model }) {
             </fieldset>
 
             <div className="flex flex-col gap-3">
-              <p className="text-sm font-medium">Your private alert channel</p>
-              {topic ? (
-                <a
-                  href={`https://ntfy.sh/${topic}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-center gap-1 rounded-full bg-primary px-5 py-3 text-[17px] text-primary-foreground transition-opacity hover:opacity-90"
-                >
-                  Subscribe in ntfy
-                  <ArrowUpRight className="size-4" aria-hidden="true" />
-                  <span className="sr-only">(opens in a new tab)</span>
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setTopic(randomTopic())}
-                  className="rounded-full bg-primary px-5 py-3 text-[17px] text-primary-foreground transition-opacity hover:opacity-90"
-                >
-                  Create my alert channel
-                </button>
-              )}
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {topic
-                  ? 'Open the link on your phone in the free ntfy app to receive push alerts.'
-                  : 'A random, private channel for push notifications through the free ntfy app.'}
+              <button
+                type="submit"
+                disabled={!ready}
+                className="rounded-full bg-primary px-5 py-3 text-[17px] text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Start alerts for {dollars(ALERT_PASS.cents)}
+              </button>
+              <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                One-time payment. No subscription. Alerts run for {ALERT_PASS.days} days. Apple Pay accepted.
               </p>
             </div>
-          </div>
+          </form>
 
           <div className="flex flex-col rounded-apple bg-foreground p-7 text-background">
             <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-medium">Your tracker settings</p>
+              <p className="text-sm font-medium">Rather do it yourself? Free.</p>
               <button
                 type="button"
                 onClick={copyConfig}
@@ -138,25 +160,15 @@ export function AlertsSetup({ model }: { model: Model }) {
             <pre className="mt-4 overflow-x-auto rounded-xl bg-background/5 p-4 font-mono text-[13px] leading-6 text-background/90">
               <code>{config}</code>
             </pre>
-            <ol className="mt-6 flex flex-col gap-3 text-sm leading-relaxed text-background/70">
-              <li>
-                <span className="text-background">Fork the tracker</span> on GitHub. It runs free on GitHub Actions
-                every five minutes.
-              </li>
-              <li>
-                <span className="text-background">Add these settings</span> under Settings, then Secrets and variables,
-                then Actions. Put NTFY_TOPIC in Secrets.
-              </li>
-              <li>
-                <span className="text-background">{ready ? "You're set." : 'That\u2019s it.'}</span> You&apos;ll get
-                one ping per store when your Duo comes in.
-              </li>
-            </ol>
+            <p className="mt-6 text-sm leading-relaxed text-background/70">
+              Fork the open-source tracker, add these as GitHub Actions variables, and plug in your own email or ntfy
+              topic. It runs on your GitHub account every five minutes.
+            </p>
             <a
               href={TRACKER_REPO_URL}
               target="_blank"
               rel="noreferrer"
-              className="mt-auto flex items-center justify-center gap-1 self-start rounded-full bg-background px-5 py-2.5 pt-2.5 text-[15px] text-foreground transition-opacity hover:opacity-90 max-lg:mt-6"
+              className="mt-auto flex items-center justify-center gap-1 self-start rounded-full bg-background px-5 py-2.5 text-[15px] text-foreground transition-opacity hover:opacity-90 max-lg:mt-6"
             >
               Fork on GitHub
               <ArrowUpRight className="size-4" aria-hidden="true" />
@@ -165,6 +177,14 @@ export function AlertsSetup({ model }: { model: Model }) {
           </div>
         </div>
       </div>
+
+      <CheckoutSheet
+        key={`${email}|${postal}|${distance}|${model.partNumber}`}
+        title={`Email alerts · ${dollars(ALERT_PASS.cents)}`}
+        open={open}
+        onClose={() => setOpen(false)}
+        fetchClientSecret={fetchClientSecret}
+      />
     </section>
   );
 }

@@ -45,3 +45,12 @@ export function normalizeZip(value: string) {
 export function milesToKm(miles: number) {
   return Math.round(miles * 1.609344);
 }
+
+export function modelByPartNumber(partNumber: string) {
+  for (const f of FINISHES) {
+    for (const c of CAPACITIES) {
+      if (PART_NUMBERS[f.id][c.id] === partNumber) return findModel(f.id, c.id);
+    }
+  }
+  return null;
+}
