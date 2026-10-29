@@ -10,12 +10,12 @@ export const CAPACITIES: { id: CapacityId; name: string; price: number }[] = [
   { id: '256gb', name: '256GB', price: 1999 },
   { id: '512gb', name: '512GB', price: 2199 },
   { id: '1tb', name: '1TB', price: 2599 },
-  { id: '2tb', name: '2TB', price: 3299 },
+  { id: '2tb', name: '2TB', price: 3199 },
 ];
 
 const PART_NUMBERS: Record<FinishId, Record<CapacityId, string>> = {
-  starwhite: { '256gb': 'MK244LL/A', '512gb': 'MK264LL/A', '1tb': 'MK284LL/A', '2tb': 'MK2A4LL/A' },
-  nightsky: { '256gb': 'MK254LL/A', '512gb': 'MK274LL/A', '1tb': 'MK294LL/A', '2tb': 'MK2C4LL/A' },
+  starwhite: { '256gb': 'MK1E4LL/A', '512gb': 'MK1G4LL/A', '1tb': 'MK1J4LL/A', '2tb': 'MK1Q4LL/A' },
+  nightsky: { '256gb': 'MK1F4LL/A', '512gb': 'MK1H4LL/A', '1tb': 'MK1L4LL/A', '2tb': 'MK1R4LL/A' },
 };
 
 export const APPLE_DUO_URL = 'https://www.apple.com/shop/buy-iphone/iphone-duo';
