@@ -7,10 +7,10 @@ export const FINISHES: { id: FinishId; name: string; swatch: string; image: stri
 ];
 
 export const CAPACITIES: { id: CapacityId; name: string; price: number }[] = [
-  { id: '256gb', name: '256GB', price: 2199 },
-  { id: '512gb', name: '512GB', price: 2399 },
-  { id: '1tb', name: '1TB', price: 2799 },
-  { id: '2tb', name: '2TB', price: 3499 },
+  { id: '256gb', name: '256GB', price: 1999 },
+  { id: '512gb', name: '512GB', price: 2199 },
+  { id: '1tb', name: '1TB', price: 2599 },
+  { id: '2tb', name: '2TB', price: 3299 },
 ];
 
 const PART_NUMBERS: Record<FinishId, Record<CapacityId, string>> = {
