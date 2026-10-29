@@ -2,6 +2,7 @@ const LINKS = [
   { href: '#find', label: 'Find' },
   { href: '#how', label: 'How it works' },
   { href: '#alerts', label: 'Alerts' },
+  { href: '#support', label: 'Support' },
 ];
 
 export function SiteNav() {

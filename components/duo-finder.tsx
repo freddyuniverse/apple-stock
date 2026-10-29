@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { ArrowUpRight } from 'lucide-react';
 import { APPLE_DUO_URL, CAPACITIES, FINISHES, findModel, formatPrice, type CapacityId, type FinishId } from '@/lib/duo';
 import { AlertsSetup } from '@/components/alerts-setup';
+import { retailersFor } from '@/lib/monetize';
 
 export function DuoFinder({ children }: { children?: React.ReactNode }) {
   const [finish, setFinish] = useState<FinishId>('nightsky');
@@ -124,6 +125,29 @@ export function DuoFinder({ children }: { children?: React.ReactNode }) {
                     <ArrowUpRight className="size-4" aria-hidden="true" />
                     <span className="sr-only">(opens in a new tab)</span>
                   </a>
+                </div>
+
+                <div className="mt-6 border-t border-border pt-5">
+                  <p className="text-sm text-muted-foreground">Also check</p>
+                  <ul className="mt-2 flex flex-col">
+                    {retailersFor(model.name).map((r) => (
+                      <li key={r.id}>
+                        <a
+                          href={r.href}
+                          target="_blank"
+                          rel={r.affiliate ? 'sponsored noreferrer' : 'noreferrer'}
+                          className="group flex items-center justify-between gap-4 rounded-lg py-2.5 text-[17px]"
+                        >
+                          <span className="flex flex-col">
+                            <span className="text-foreground group-hover:text-primary">{r.name}</span>
+                            <span className="text-xs text-muted-foreground">{r.note}</span>
+                          </span>
+                          <ArrowUpRight className="size-4 text-primary" aria-hidden="true" />
+                          <span className="sr-only">(opens in a new tab)</span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             </div>
