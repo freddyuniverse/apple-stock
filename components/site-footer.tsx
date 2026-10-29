@@ -6,7 +6,7 @@ export function SiteFooter() {
       <div className="mx-auto flex max-w-5xl flex-col gap-3 border-t border-border px-5 py-8 text-xs leading-relaxed text-muted-foreground">
         <p>
           findmyduo is an independent project and is not affiliated with, endorsed by, or sponsored by Apple Inc.
-          iPhone and Apple Store are trademarks of Apple Inc. Prices shown are Apple Canada list prices in CAD.
+          iPhone and Apple Store are trademarks of Apple Inc. Prices shown are Apple US list prices in USD, before tax.
         </p>
         <p>
           Some retailer links are affiliate links. As an Amazon Associate, findmyduo earns from qualifying purchases, at

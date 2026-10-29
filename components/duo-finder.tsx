@@ -46,7 +46,7 @@ export function DuoFinder({ children }: { children?: React.ReactNode }) {
             <div className="flex flex-col gap-10">
               <fieldset>
                 <legend className="text-xl font-semibold tracking-tight">
-                  Finish. <span className="text-muted-foreground">Pick your favourite.</span>
+                  Finish. <span className="text-muted-foreground">Pick your favorite.</span>
                 </legend>
                 <p className="mt-4 text-sm text-muted-foreground">
                   Finish — <span className="text-foreground">{finishName}</span>

@@ -36,7 +36,7 @@ export function Hero() {
             className="-my-[12%] h-auto w-full"
           />
         </div>
-        <p className="mb-16 text-sm text-muted-foreground md:mb-20">From {'$'}2,999 CAD. Star White and Night Sky.</p>
+        <p className="mb-16 text-sm text-muted-foreground md:mb-20">From {'$'}2,199. Star White and Night Sky.</p>
       </div>
     </section>
   );

@@ -40,6 +40,10 @@ export class AppleStore {
     this.log = log;
   }
 
+  get locale() {
+    return this.country === 'us' ? 'en-US' : `en-${String(this.country).toUpperCase()}`;
+  }
+
   get origin() {
     return 'https://www.apple.com';
   }
@@ -67,7 +71,7 @@ export class AppleStore {
 
   async newSession() {
     await this.context?.close().catch(() => {});
-    this.context = await this.browser.newContext({ userAgent: userAgentFor(this.browser.version()), locale: 'en-CA' });
+    this.context = await this.browser.newContext({ userAgent: userAgentFor(this.browser.version()), locale: this.locale });
     this.page = await this.context.newPage();
   }
 
@@ -81,7 +85,7 @@ export class AppleStore {
 
   async fetchPage(product = this.product) {
     const url = this.urlFor(product);
-    const res = await fetch(url, { headers: { 'User-Agent': userAgentFor('130'), 'Accept-Language': 'en-CA' }, redirect: 'manual' });
+    const res = await fetch(url, { headers: { 'User-Agent': userAgentFor('130'), 'Accept-Language': this.locale }, redirect: 'manual' });
     if (res.status !== 200) throw new Error(`${url} returned ${res.status}`);
     return res.text();
   }

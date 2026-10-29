@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ArrowUpRight, Check, Copy } from 'lucide-react';
-import { TRACKER_REPO_URL, normalizePostal } from '@/lib/duo';
+import { TRACKER_REPO_URL, milesToKm, normalizeZip } from '@/lib/duo';
 
 const DISTANCES = [10, 25, 50, 100];
 
@@ -19,16 +19,16 @@ export function AlertsSetup({ model }: { model: Model }) {
   const [topic, setTopic] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const postal = normalizePostal(postalInput);
-  const showPostalError = postalInput.trim().length >= 6 && !postal;
+  const postal = normalizeZip(postalInput);
+  const showPostalError = postalInput.trim().length >= 5 && !postal;
   const ready = Boolean(postal && topic);
 
   const config = [
-    `POSTAL_CODE=${postal ?? 'A1A1A1'}`,
-    'COUNTRY=ca',
+    `POSTAL_CODE=${postal ?? '10001'}`,
+    'COUNTRY=us',
     'PRODUCT=iphone-duo',
     `MODELS=${model.partNumber}`,
-    `MAX_DISTANCE_KM=${distance}`,
+    `MAX_DISTANCE_KM=${milesToKm(distance)}`,
     `NTFY_TOPIC=${topic ?? 'create-a-topic-above'}`,
   ].join('\n');
 
@@ -53,14 +53,14 @@ export function AlertsSetup({ model }: { model: Model }) {
           <div className="flex flex-col gap-8 rounded-apple bg-background p-7">
             <div className="flex flex-col gap-2">
               <label htmlFor="postal" className="text-sm font-medium">
-                Your postal code
+                Your ZIP code
               </label>
               <input
                 id="postal"
-                inputMode="text"
+                inputMode="numeric"
                 autoComplete="postal-code"
-                placeholder="M5V 3L9"
-                maxLength={7}
+                placeholder="10001"
+                maxLength={10}
                 value={postalInput}
                 onChange={(e) => setPostalInput(e.target.value)}
                 aria-invalid={showPostalError}
@@ -68,7 +68,7 @@ export function AlertsSetup({ model }: { model: Model }) {
                 className="h-14 rounded-xl border border-border bg-background px-4 text-[17px] uppercase outline-none transition placeholder:normal-case placeholder:text-muted-foreground focus:border-primary focus:shadow-[0_0_0_3px_rgba(0,113,227,0.2)]"
               />
               <p id="postal-hint" className="text-xs text-muted-foreground">
-                {showPostalError ? 'Enter a Canadian postal code, like M5V 3L9.' : 'Canada only for now.'}
+                {showPostalError ? 'Enter a 5-digit US ZIP code, like 10001.' : 'Any Apple Store in the US.'}
               </p>
             </div>
 
@@ -86,7 +86,7 @@ export function AlertsSetup({ model }: { model: Model }) {
                       className="peer sr-only"
                     />
                     <span className="block rounded-full py-2 text-center text-sm text-muted-foreground transition peer-checked:bg-background peer-checked:font-medium peer-checked:text-foreground peer-checked:shadow-sm peer-focus-visible:outline-2 peer-focus-visible:outline-primary">
-                      {d} km
+                      {d} mi
                     </span>
                   </label>
                 ))}

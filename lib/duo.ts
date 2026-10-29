@@ -7,18 +7,18 @@ export const FINISHES: { id: FinishId; name: string; swatch: string; image: stri
 ];
 
 export const CAPACITIES: { id: CapacityId; name: string; price: number }[] = [
-  { id: '256gb', name: '256GB', price: 2999 },
-  { id: '512gb', name: '512GB', price: 3299 },
-  { id: '1tb', name: '1TB', price: 3899 },
-  { id: '2tb', name: '2TB', price: 4799 },
+  { id: '256gb', name: '256GB', price: 2199 },
+  { id: '512gb', name: '512GB', price: 2399 },
+  { id: '1tb', name: '1TB', price: 2799 },
+  { id: '2tb', name: '2TB', price: 3499 },
 ];
 
 const PART_NUMBERS: Record<FinishId, Record<CapacityId, string>> = {
-  starwhite: { '256gb': 'MK244VC/A', '512gb': 'MK264VC/A', '1tb': 'MK284VC/A', '2tb': 'MK2A4VC/A' },
-  nightsky: { '256gb': 'MK254VC/A', '512gb': 'MK274VC/A', '1tb': 'MK294VC/A', '2tb': 'MK2C4VC/A' },
+  starwhite: { '256gb': 'MK244LL/A', '512gb': 'MK264LL/A', '1tb': 'MK284LL/A', '2tb': 'MK2A4LL/A' },
+  nightsky: { '256gb': 'MK254LL/A', '512gb': 'MK274LL/A', '1tb': 'MK294LL/A', '2tb': 'MK2C4LL/A' },
 };
 
-export const APPLE_DUO_URL = 'https://www.apple.com/ca/shop/buy-iphone/iphone-duo';
+export const APPLE_DUO_URL = 'https://www.apple.com/shop/buy-iphone/iphone-duo';
 export const TRACKER_REPO_URL = 'https://github.com/freddyuniverse/apple-stock';
 
 export function findModel(finish: FinishId, capacity: CapacityId) {
@@ -33,13 +33,15 @@ export function findModel(finish: FinishId, capacity: CapacityId) {
 }
 
 export function formatPrice(value: number) {
-  return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(value);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
 }
 
-const CA_POSTAL = /^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z] ?\d[ABCEGHJ-NPRSTV-Z]\d$/i;
+const US_ZIP = /^(\d{5})(?:-\d{4})?$/;
 
-export function normalizePostal(value: string) {
-  const trimmed = value.trim().toUpperCase();
-  if (!CA_POSTAL.test(trimmed)) return null;
-  return trimmed.replace(/\s/g, '');
+export function normalizeZip(value: string) {
+  return US_ZIP.exec(value.trim())?.[1] ?? null;
+}
+
+export function milesToKm(miles: number) {
+  return Math.round(miles * 1.609344);
 }
